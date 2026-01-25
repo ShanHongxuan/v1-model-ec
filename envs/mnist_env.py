@@ -3,7 +3,6 @@ import jax.numpy as jnp
 from flax import struct
 from typing import Optional
 
-# [修改] 将有默认值的 metrics 字段移到最后
 @struct.dataclass
 class EnvState:
     # --- 所有没有默认值的字段放前面 ---
@@ -24,23 +23,14 @@ class MnistEnv:
         """
         self.presentation_steps = presentation_steps
         
-        self._images = images # [修改] 直接存储
+        self._images = images
         self._labels = labels
         self._num_data = self._images.shape[0]
         
         self.observation_size = 784
-        self.action_size = 10
-
-    def _load_data(self):
-        """只在第一次需要时加载数据"""
-        if self._images is None:
-            from utils.mnist_loader import load_mnist_data
-            self._images, self._labels = load_mnist_data('train')
-            self._num_data = self._images.shape[0]
+        self.action_size = 10  # 10个数字分类
 
     def reset(self, rng: jnp.ndarray) -> EnvState:
-        self._load_data() # 确保数据已加载
-        
         # 随机选择一张图片
         idx = jax.random.randint(rng, (), 0, self._num_data)
         image = self._images[idx]
@@ -54,7 +44,6 @@ class MnistEnv:
             current_label=label,
             time_step=jnp.int32(0),
             cumulative_output=jnp.zeros(self.action_size, dtype=jnp.float32)
-            # metrics 会自动使用 default_factory
         )
 
     def step(self, state: EnvState, action: jnp.ndarray) -> EnvState:
@@ -65,10 +54,21 @@ class MnistEnv:
         new_time = state.time_step + 1
         done = new_time >= self.presentation_steps
         
-        pred_label = jnp.argmax(new_cumulative)
-        is_correct = (pred_label == state.current_label)
+        # ==================== [核心修改] ====================
+        # 使用 Softmax 概率作为奖励，而不是 0/1 硬奖励
         
-        reward = jnp.where(done, is_correct.astype(jnp.float32), 0.0)
+        # 1. 将累积的输出（logits）通过 Softmax 转换为概率分布
+        #    为了数值稳定性，减去最大值
+        logits = new_cumulative - jnp.max(new_cumulative)
+        probs = jax.nn.softmax(logits)
+        
+        # 2. 奖励 = 正确类别对应的概率
+        #    这样，即使预测错误，只要正确类别的概率在增加，网络就会得到正反馈
+        reward_value = probs[state.current_label]
+        
+        # 3. 仅在回合结束时给予奖励
+        reward = jnp.where(done, reward_value, 0.0)
+        # =====================================================
         
         return state.replace(
             obs=state.current_image, # 保持输入不变
