@@ -58,10 +58,13 @@ class ConnSNN(nn.Module):
 
     @nn.compact
     def __call__(self, carry, x):
-        # dummy fixed weights
+        # x 的形状可能是:
+        # 1. (Batch, Time, Features) -> 在 _runner_init 中
+        # 2. (Time, Features)        -> 在 _evaluate_step (vmap) 中
+        
         self.variable("fixed_weights", "dummy", lambda: None)
-        # Kernels
-        in_dims        = x.shape[-1]
+        
+        in_dims = x.shape[-1]
         num_excitatory = round(self.num_neurons * self.excitatory_ratio)
 
         kernel_in  = self.param("kernel_in",  nn.initializers.zeros, (2 * in_dims, self.num_neurons),      jnp.bool_)
@@ -69,67 +72,91 @@ class ConnSNN(nn.Module):
         kernel_out = self.param("kernel_out", nn.initializers.zeros, (self.num_neurons, self.out_dims),    jnp.bool_)
 
         # Parameters
-        # [修改] 1. 确定有效的 tau (向量或标量)
         if self.tau_Vm_vector is not None:
             tau_eff = jnp.array(self.tau_Vm_vector, dtype=self.neuron_dtype)
         else:
             tau_eff = self.tau_Vm
 
-        # [修改] 2. 基于 tau_eff 计算权重缩放因子
         R_in  = self.K_in  * self.Vth * tau_eff                * math.sqrt(2 / (self.expected_sparsity * in_dims))
         R     = self.K_h   * self.Vth * tau_eff / self.tau_syn * math.sqrt(2 / (self.expected_sparsity * self.num_neurons))
         R_out = self.K_out                                     * math.sqrt(1 / (self.expected_sparsity * self.num_neurons))
 
         alpha_syn = math.exp(-self.dt / self.tau_syn)
         alpha_out = math.exp(-self.dt / self.tau_out)
+        alpha_Vm  = jnp.exp(-self.dt / tau_eff)
+
+        # 1. 计算输入电流
+        input_spikes = jnp.concatenate([x, -x], axis=-1)
         
-        # [修改] 3. 计算 Alpha Vm
-        alpha_Vm = jnp.exp(-self.dt / tau_eff)
+        # 动态收缩：总是收缩 input_spikes 的最后一维 和 kernel_in 的第一维
+        i_in_seq = jax.lax.dot_general(
+            input_spikes, 
+            kernel_in.astype(self.neuron_dtype), 
+            (((input_spikes.ndim - 1,), (0,)), ((), ())) 
+        )
+        i_in_seq = i_in_seq * R_in
 
-        # input layer
-        x    = x.astype(self.neuron_dtype)
-        # JAX 会自动广播：R_in (N,) * conn_dense (B, N) -> (B, N)
-        i_in = R_in * conn_dense(kernel_in, jnp.concatenate([x, -x], axis=-1))
+        # ================= [核心修复逻辑] =================
+        # 根据维度判断是否需要交换轴，以确保 Time 轴始终在 axis 0
+        
+        if i_in_seq.ndim == 3: 
+            # Case A: (Batch, Time, N) -> 来自 _runner_init
+            # 我们需要让 scan 遍历 Time，所以把 Time (axis 1) 移到 axis 0
+            # 变换后: (Time, Batch, N)
+            i_in_seq = jnp.swapaxes(i_in_seq, 0, 1)
+            
+        # Case B: (Time, N) -> 来自 vmap
+        # Time 已经在 axis 0，无需操作
+        
+        # =================================================
 
-        # SNN layer
-        def _snn_step(_carry, _x):
-            v_m, i_syn, rate, spike = _carry
+        # 2. 定义扫描函数
+        def _snn_step_seq(loop_carry, i_in_t):
+            # i_in_t 的形状现在保证是正确的：
+            # Case A: (Batch, N)
+            # Case B: (N,)
+            # 这与 carry 中的 v_m 形状完美匹配
+            
+            v_m, i_syn, rate, spike = loop_carry
 
-            # JAX 会自动广播：R (N,) * conn_dense (B, N) -> (B, N)
             i_spike = R * conn_dense(kernel_h, spike).astype(self.neuron_dtype)
             i_syn   = i_syn * alpha_syn + i_spike
             
-            # alpha_Vm (N,) 自动广播
-            v_m     = lerp(v_m, self.Vr + i_syn + i_in, alpha_Vm)
+            # 这里原本会报错的加法现在安全了
+            v_m     = lerp(v_m, self.Vr + i_syn + i_in_t, alpha_Vm)
 
-            spike_bool           = v_m > self.Vth
-            v_m                  = jnp.where(spike_bool, self.Vr, v_m)
+            spike_bool = v_m > self.Vth
+            v_m        = jnp.where(spike_bool, self.Vr, v_m)
 
             spike_exc, spike_inh = jnp.split(spike_bool.astype(self.spike_dtype), [num_excitatory], axis=-1)
-            spike                = jnp.concatenate([spike_exc, -spike_inh], axis=-1)
+            spike = jnp.concatenate([spike_exc, -spike_inh], axis=-1)
 
-            rate    = lerp(rate, (1 / self.dt) * spike.astype(rate.dtype), alpha_out)
+            rate = lerp(rate, (1 / self.dt) * spike.astype(rate.dtype), alpha_out)
+            
+            return (v_m, i_syn, rate, spike), rate
 
-            return (v_m, i_syn, rate, spike), None
+        # 3. 执行扫描
+        final_carry, rate_seq = jax.lax.scan(
+            _snn_step_seq, 
+            carry, 
+            i_in_seq
+        )
 
-        def _snn_get_output(_carry):
-            v_m, i_syn, rate, spike = _carry
-
-            return R_out * conn_dense(kernel_out, rate)
-
-        # Stepping
-        carry, _ = jax.lax.scan(_snn_step, carry, None, round(self.sim_time / self.dt))
-        return carry, _snn_get_output(carry)
-
-        def _snn_get_output(_carry):
-            v_m, i_syn, rate, spike = _carry
-
-            return R_out * conn_dense(kernel_out, rate)
-
-        # Stepping
-        carry, _ = jax.lax.scan(_snn_step, carry, None, round(self.sim_time / self.dt))
-        return carry, _snn_get_output(carry)
-
+        rate_mean = jnp.mean(rate_seq, axis=0) # (N,)
+        
+        # [新增] 构建一个只允许兴奋性神经元输出的 mask
+        # 假设前 num_excitatory 个是兴奋性的 (根据之前的 E-I 排序)
+        # exc_mask: [1, 1, ..., 0, 0]
+        exc_mask = jnp.arange(self.num_neurons) < num_excitatory
+        # 扩展到 (N, 1) 以便广播
+        exc_mask = jnp.expand_dims(exc_mask, -1) 
+        
+        # 应用 mask: 抑制性神经元的权重被强制视为 0
+        masked_kernel_out = kernel_out & exc_mask
+        
+        output = R_out * conn_dense(masked_kernel_out, rate_mean)
+        return final_carry, output
+        
     def initial_carry(self, key: jax.random.PRNGKey, batch_size: int):
         v_m   = jnp.full((batch_size, self.num_neurons), self.Vr, self.neuron_dtype)
         i_syn = jnp.zeros((batch_size, self.num_neurons),         self.neuron_dtype)

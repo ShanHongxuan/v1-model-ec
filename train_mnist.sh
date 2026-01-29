@@ -19,7 +19,6 @@ TASK="mnist"
 TOTAL_GENS=500
 USE_BIO_PROB=true
 LEARNING_RATE="0.1"
-MAX_RATE="100.0"
 
 # 定义要对比的初始化策略
 # mix=1.0: 强生物先验 (使用平滑后的生物概率)
@@ -27,10 +26,8 @@ MAX_RATE="100.0"
 MIX_FACTORS=(1.0) 
 
 # 定义要在最佳 K 值附近扫描的范围
-# K_h: 在 0.05 附近进行密集采样
-K_H_VALUES=(0.01 0.012 0.014 0.016 0.018 0.02) 
-# K_in: 在 0.5 附近进行密集采样
-K_IN_VALUES=(0.05 0.06 0.07)
+K_H_VALUES=(0.16 0.18 0.2)
+K_IN_VALUES=(0.03 0.04 0.05)
 
 # 遍历所有参数组合
 for MIX in "${MIX_FACTORS[@]}"; do
@@ -52,6 +49,10 @@ for MIX in "${MIX_FACTORS[@]}"; do
         es_conf.lr="$LEARNING_RATE" \
         network_conf.K_in="$K_IN" \
         network_conf.K_h="$K_H" \
+        network_conf.K_out=2000.0 \
+        network_conf.dt=0.5 \
+        network_conf.sim_time=0.5 \
+        episode_conf.max_episode_length=1 \
         env_conf.max_rate_hz="$MAX_RATE" \
         project_name="$PROJECT_NAME" \
         log_group="$GROUP_NAME" \

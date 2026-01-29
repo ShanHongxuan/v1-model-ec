@@ -1,79 +1,71 @@
+# envs/mnist_env.py
+
 import jax
 import jax.numpy as jnp
 from flax import struct
-from typing import Optional
 
 @struct.dataclass
 class EnvState:
-    # --- 所有没有默认值的字段放前面 ---
+    # --- 必须与 reset 返回值匹配 ---
     obs: jnp.ndarray
     reward: jnp.ndarray
     done: jnp.ndarray
-    current_image: jnp.ndarray
     current_label: jnp.ndarray
-    time_step: jnp.int32
-    cumulative_output: jnp.ndarray
-    # --- 所有有默认值的字段放后面 ---
     metrics: dict = struct.field(default_factory=dict)
 
 class MnistEnv:
-    def __init__(self, images, labels, presentation_steps=50):
-        """
-        presentation_steps: 每张图片展示多少个仿真步 (例如 50步)
-        """
-        self.presentation_steps = presentation_steps
+    def __init__(self, images, labels, presentation_steps=100, input_hz=100.0, dt_ms=0.5):
+        # [核心] 这里记录总步数，用于生成张量
+        self.total_steps = presentation_steps 
+        # 对 ec.py 来说，这个环境只需要 "1步" 就跑完了整个仿真
+        self.presentation_steps = 1 
         
         self._images = images
         self._labels = labels
         self._num_data = self._images.shape[0]
         
-        self.observation_size = 784
-        self.action_size = 10  # 10个数字分类
+        # 计算发放概率
+        self.prob_per_step_max = input_hz * (dt_ms / 1000.0)
+        
+        self.observation_size = self._images.shape[1]
+        self.action_size = 10
 
     def reset(self, rng: jnp.ndarray) -> EnvState:
-        # 随机选择一张图片
-        idx = jax.random.randint(rng, (), 0, self._num_data)
-        image = self._images[idx]
+        # 分割随机数
+        rng, img_key, poisson_key = jax.random.split(rng, 3)
+        
+        # 1. 随机选图
+        idx = jax.random.randint(img_key, (), 0, self._num_data)
+        image = self._images[idx] # (196,)
         label = self._labels[idx]
         
+        # 2. [核心优化] 一次性生成所有时间步的脉冲
+        # 扩展 image 维度: (196,) -> (1, 196)
+        probs = image * self.prob_per_step_max
+        probs = jnp.expand_dims(probs, axis=0) 
+        # 广播到时间维度: (1, 196) -> (Time, 196)
+        probs = jnp.repeat(probs, self.total_steps, axis=0)
+        
+        # 3. 伯努利采样: 得到形状为 (Time, 196) 的脉冲序列
+        # 这就是这一整局的全部输入
+        obs_sequence = jax.random.bernoulli(poisson_key, probs).astype(jnp.float32)
+        
         return EnvState(
-            obs=image,
+            obs=obs_sequence, # 这是一个巨大的 3D 张量 (Batch, Time, 196)
             reward=jnp.float32(0.0),
             done=jnp.float32(0.0),
-            current_image=image,
-            current_label=label,
-            time_step=jnp.int32(0),
-            cumulative_output=jnp.zeros(self.action_size, dtype=jnp.float32)
+            current_label=label
         )
 
     def step(self, state: EnvState, action: jnp.ndarray) -> EnvState:
-        """
-        action: 网络的输出 (10维向量, 通常是发放率或电压)
-        """
-        new_cumulative = state.cumulative_output + action
-        new_time = state.time_step + 1
-        done = new_time >= self.presentation_steps
+        # action 是 SNN 跑完整个序列后的最终结果
         
-        # ==================== [核心修改] ====================
-        # 使用 Softmax 概率作为奖励，而不是 0/1 硬奖励
-        
-        # 1. 将累积的输出（logits）通过 Softmax 转换为概率分布
-        #    为了数值稳定性，减去最大值
-        logits = new_cumulative - jnp.max(new_cumulative)
+        # Softmax 奖励
+        logits = action - jnp.max(action)
         probs = jax.nn.softmax(logits)
-        
-        # 2. 奖励 = 正确类别对应的概率
-        #    这样，即使预测错误，只要正确类别的概率在增加，网络就会得到正反馈
-        reward_value = probs[state.current_label]
-        
-        # 3. 仅在回合结束时给予奖励
-        reward = jnp.where(done, reward_value, 0.0)
-        # =====================================================
+        reward = probs[state.current_label]
         
         return state.replace(
-            obs=state.current_image, # 保持输入不变
             reward=reward,
-            done=done.astype(jnp.float32),
-            time_step=new_time,
-            cumulative_output=new_cumulative
+            done=jnp.float32(1.0) # 一步即终局
         )

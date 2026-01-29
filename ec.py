@@ -432,14 +432,22 @@ def main(conf):
         from envs.mnist_env import MnistEnv
         from utils.mnist_loader import load_mnist_data
         
-        # [修改] 再次加载数据（这次会从缓存中读取，很快）并传给环境
+        # 加载数据
         mnist_images, mnist_labels = load_mnist_data('train')
-        base_env = MnistEnv(images=mnist_images, labels=mnist_labels, presentation_steps=50)
+        
+        # [修改] 实例化 MnistEnv，传入 dt
+        # 从 es_conf 中获取 dt，如果不存在则使用默认值
+        dt_ms = conf.network_conf.get('dt', 0.5)
+        steps = 200
+        base_env = MnistEnv(images=mnist_images, 
+                            labels=mnist_labels, 
+                            presentation_steps=steps,
+                            dt_ms=dt_ms) # <--- 传入 dt
         
         env = envs.wrappers.VmapWrapper(base_env) 
         
         conf.episode_conf.action_repeat = 1
-        conf.episode_conf.max_episode_length = 50 
+        # conf.episode_conf.max_episode_length = 50 
         
     else:
         # 原有的 Brax 任务逻辑
