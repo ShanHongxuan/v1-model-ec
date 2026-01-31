@@ -3,15 +3,15 @@
 echo "=== MNIST 最终训练: 验证生物先验的优势 ==="
 
 # 经过 debug 验证的最佳物理参数
-K_IN="12.0"    # 给 10.0 加一点点余量，确保稳健发放
-K_H="1.0"      # 递归增益 1.0 表现良好
-K_OUT="100.0"  # 输出增益 100.0 确保了 30+ 的 Logits Range
+K_IN="15"    # 给 10.0 加一点点余量，确保稳健发放
+K_H="1"      # 递归增益 1.0 表现良好
+K_OUT="200.0"  # 输出增益 100.0 确保了 30+ 的 Logits Range
 
 # 训练配置
 TASK="mnist"
 GENS=1000
-POPSIZE=2048 # 显存允许的话，越大越好
-LR=0.1
+POPSIZE=1024 # 显存允许的话，越大越好
+LR=0.15
 
 PROJECT="E-SNN-Final-Run"
 GROUP="Bio_vs_Random_$(date +%Y%m%d_%H%M)"

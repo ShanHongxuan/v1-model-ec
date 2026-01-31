@@ -26,8 +26,8 @@ LEARNING_RATE="0.1"
 MIX_FACTORS=(1.0) 
 
 # 定义要在最佳 K 值附近扫描的范围
-K_H_VALUES=(0.16 0.18 0.2)
-K_IN_VALUES=(0.03 0.04 0.05)
+K_H_VALUES=(0.16 0.18)
+K_IN_VALUES=(0.03 0.035 0.04)
 
 # 遍历所有参数组合
 for MIX in "${MIX_FACTORS[@]}"; do

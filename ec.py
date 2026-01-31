@@ -242,7 +242,7 @@ def _runnner_run(runner: RunnerState, conf: ESConfig) -> Tuple[RunnerState, Dict
     metrics = {}
 
     # split keys for this run
-    new_key, run_key, carry_key = jax.random.split(runner.key, 3)
+    new_key, run_key, carry_key, env_key = jax.random.split(runner.key, 4)
     runner = runner.replace(key=new_key)
 
     # Generate params with bernoulli distribution
@@ -255,13 +255,27 @@ def _runnner_run(runner: RunnerState, conf: ESConfig) -> Tuple[RunnerState, Dict
     def _split_fitness(x):
         return jnp.split(x, [conf.pop_size - conf.eval_size, ])
 
-    # Initialize population
+    common_env_key = jax.random.split(env_key, 1)[0] # Shape: (2,)
+    
+    # 2. 将这个种子广播给所有个体
+    # Shape: (pop_size, 2)
+    broadcasted_keys = jnp.repeat(
+        jnp.expand_dims(common_env_key, 0), 
+        conf.pop_size, 
+        axis=0
+    )
+    
+    # 3. 使用广播的种子重置环境
+    # 这样大家拿到的 obs (MNIST图片) 就是完全一样的了
+    synchronized_env_states = conf.env_cls.reset(broadcasted_keys)
+    
+    # 4. 初始化 population
     pop = PopulationState(
         # Network
         network_params=network_params,
         network_states=conf.network_cls.initial_carry(carry_key, conf.pop_size),
-        # Env
-        env_states=runner.env_reset_pool,
+        # Env (使用同步后的状态，而不是 runner.env_reset_pool)
+        env_states=synchronized_env_states, 
         # Fitness
         fitness_totrew=jnp.zeros(conf.pop_size),
         fitness_sum=jnp.zeros(conf.pop_size),
