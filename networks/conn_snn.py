@@ -82,7 +82,7 @@ class ConnSNN(nn.Module):
         # 4. 安全截断 (Clip)
         # 防止微弱噪声被放大成巨型信号，也防止全黑输入导致 NaN
         # 允许放大倍数在 0 到 10 倍之间
-        scale_factor = jnp.clip(scale_factor, 0.0, 10.0)
+        scale_factor = jnp.clip(scale_factor, 0.0, 15.0)
         
         # 5. 应用归一化
         # 现在，无论是 0 还是 1，x_norm 携带的总能量都是差不多的

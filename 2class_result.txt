@@ -1,0 +1,268 @@
+(ec_py309) mzsk@r:~/code/EvolvingConnectivity-master$ python ec_2class.py
+>>> [System] 预加载 MNIST 数据...
+WARNING: All log messages before absl::InitializeLog() is called are written to STDERR
+I0000 00:00:1770221138.273686  124059 gpu_device.cc:2020] Created device /job:localhost/replica:0/task:0/device:GPU:0 with 5563 MB memory:  -> device: 0, name: NVIDIA GeForce RTX 4060 Laptop GPU, pci bus id: 0000:01:00.0, compute capability: 8.9
+MNIST 数据已加载并降维: shape=(60000, 196)
+2026-02-05 00:05:41.277756: W external/xla/xla/service/gpu/nvptx_compiler.cc:765] The NVIDIA driver's CUDA version is 12.7 which is older than the ptxas CUDA version (12.9.86). Because the driver is older than the ptxas version, XLA is disabling parallel compilation, which may slow down compilation. You should update your NVIDIA driver or use the NVIDIA-provided CUDA forward compatibility packages.
+Gym has been unmaintained since 2022 and does not support NumPy 2.0 amongst other critical functionality.
+Please upgrade to Gymnasium, the maintained drop-in replacement of Gym, or contact the authors of your software and request that they upgrade.
+Users of this version of Gym should be able to simply replace 'import gym' with 'import gymnasium as gym' in the vast majority of cases.
+See the migration guide at https://gymnasium.farama.org/introduction/migration_guide/ for additional information.
+=== 二分类平衡批次训练 (Balanced Batch Training) ===
+>>> 准备平衡数据集...
+MNIST 数据已加载并降维: shape=(60000, 196)
+>>> 开始训练 (Batch Size = 16, Balanced)...
+  0%|                                                                                                                                                       | 0/500 [00:00<?, ?it/s]/home/mzsk/miniconda3/envs/ec_py309/lib/python3.9/site-packages/jax/_src/interpreters/mlir.py:910: UserWarning: Some donated buffers were not usable: ShapedArray(bool[509,509]), ShapedArray(bool[196,509]), ShapedArray(bool[509,2]), ShapedArray(bool[509,509]), ShapedArray(bool[196,509]), ShapedArray(bool[509,2]), ShapedArray(bool[509,509]), ShapedArray(bool[196,509]), ShapedArray(bool[509,2]).
+See an explanation at https://jax.readthedocs.io/en/latest/faq.html#buffer-donation.
+  warnings.warn("Some donated buffers were not usable:"
+                                                                                                                                                                                    
+[Gen 10 Diagnostic]
+  Input 0 -> Rate:1.5846 | Logits:[10.883036 10.883036] | P(0):0.5000                                                                                                               
+  Input 1 -> Rate:1.4026 | Logits:[7.219985 7.219985] | P(1):0.5000                                                                                                                 
+  ⚠️  警告：发放率过高，网络处于饱和状态。                                                                                                                                           
+                                                                                                                                                                                    
+[Gen 20 Diagnostic]
+  Input 0 -> Rate:1.6379 | Logits:[10.925317 10.587389] | P(0):0.5837                                                                                                               
+  Input 1 -> Rate:1.1953 | Logits:[9.271519 8.990899] | P(1):0.4303                                                                                                                 
+  ⚠️  警告：发放率过高，网络处于饱和状态。                                                                                                                                           
+                                                                                                                                                                                    
+[Gen 30 Diagnostic]
+  Input 0 -> Rate:1.6057 | Logits:[9.919679 8.281213] | P(0):0.8373                                                                                                                 
+  Input 1 -> Rate:1.1470 | Logits:[6.7987037 5.7619014] | P(1):0.2618                                                                                                               
+  ⚠️  警告：发放率过高，网络处于饱和状态。                                                                                                                                           
+                                                                                                                                                                                    
+[Gen 40 Diagnostic]
+  Input 0 -> Rate:1.7812 | Logits:[9.370156  7.5852427] | P(0):0.8563                                                                                                               
+  Input 1 -> Rate:1.0844 | Logits:[5.9840155 4.9840016] | P(1):0.2689                                                                                                               
+  ⚠️  警告：发放率过高，网络处于饱和状态。                                                                                                                                           
+                                                                                                                                                                                    
+[Gen 50 Diagnostic]
+  Input 0 -> Rate:1.8458 | Logits:[8.54382   7.0193744] | P(0):0.8212                                                                                                               
+  Input 1 -> Rate:0.7199 | Logits:[3.513732  3.2730496] | P(1):0.4401                                                                                                               
+  ⚠️  警告：发放率过高，网络处于饱和状态。                                                                                                                                           
+                                                                                                                                                                                    
+[Gen 60 Diagnostic]
+  Input 0 -> Rate:1.3685 | Logits:[7.712906  6.0754538] | P(0):0.8372                                                                                                               
+  Input 1 -> Rate:1.2652 | Logits:[4.6831717 4.1202483] | P(1):0.3629                                                                                                               
+  ⚠️  警告：发放率过高，网络处于饱和状态。                                                                                                                                           
+                                                                                                                                                                                    
+[Gen 70 Diagnostic]
+  Input 0 -> Rate:1.6387 | Logits:[7.1871095 5.574862 ] | P(0):0.8337                                                                                                               
+  Input 1 -> Rate:0.7185 | Logits:[2.261126  2.6570518] | P(1):0.5977                                                                                                               
+  ⚠️  警告：发放率过高，网络处于饱和状态。                                                                                                                                           
+                                                                                                                                                                                    
+[Gen 80 Diagnostic]
+  Input 0 -> Rate:1.5142 | Logits:[6.8180146 5.095435 ] | P(0):0.8485                                                                                                               
+  Input 1 -> Rate:0.6733 | Logits:[2.3284063 2.5172546] | P(1):0.5471                                                                                                               
+  ⚠️  警告：发放率过高，网络处于饱和状态。                                                                                                                                           
+                                                                                                                                                                                    
+[Gen 90 Diagnostic]
+  Input 0 -> Rate:1.6684 | Logits:[7.188055  5.0780087] | P(0):0.8919                                                                                                               
+  Input 1 -> Rate:1.1476 | Logits:[4.2833905 3.62898  ] | P(1):0.3420                                                                                                               
+  ⚠️  警告：发放率过高，网络处于饱和状态。                                                                                                                                           
+                                                                                                                                                                                    
+[Gen 100 Diagnostic]
+  Input 0 -> Rate:1.7675 | Logits:[7.2193837 4.933845 ] | P(0):0.9077                                                                                                               
+  Input 1 -> Rate:0.9431 | Logits:[2.2594428 2.430035 ] | P(1):0.5425                                                                                                               
+  ⚠️  警告：发放率过高，网络处于饱和状态。                                                                                                                                           
+                                                                                                                                                                                    
+[Gen 110 Diagnostic]
+  Input 0 -> Rate:1.1091 | Logits:[4.782687  3.6122692] | P(0):0.7632                                                                                                               
+  Input 1 -> Rate:0.7704 | Logits:[2.0467794 3.0127134] | P(1):0.7243                                                                                                               
+  ⚠️  警告：发放率过高，网络处于饱和状态。                                                                                                                                           
+                                                                                                                                                                                    
+[Gen 120 Diagnostic]
+  Input 0 -> Rate:1.5935 | Logits:[6.5362673 3.5776181] | P(0):0.9507                                                                                                               
+  Input 1 -> Rate:0.5495 | Logits:[0.8602077 2.4027662] | P(1):0.8238                                                                                                               
+  ⚠️  警告：发放率过高，网络处于饱和状态。                                                                                                                                           
+                                                                                                                                                                                    
+[Gen 130 Diagnostic]
+  Input 0 -> Rate:1.3821 | Logits:[5.8645387 3.2539976] | P(0):0.9315                                                                                                               
+  Input 1 -> Rate:0.4649 | Logits:[0.67147875 2.1697278 ] | P(1):0.8173                                                                                                             
+  ⚠️  警告：发放率过高，网络处于饱和状态。                                                                                                                                           
+                                                                                                                                                                                    
+[Gen 140 Diagnostic]
+  Input 0 -> Rate:1.2969 | Logits:[5.463338  3.0408463] | P(0):0.9185                                                                                                               
+  Input 1 -> Rate:0.4214 | Logits:[0.39343438 1.81874   ] | P(1):0.8062                                                                                                             
+  ⚠️  警告：发放率过高，网络处于饱和状态。                                                                                                                                           
+                                                                                                                                                                                    
+[Gen 150 Diagnostic]
+  Input 0 -> Rate:1.0267 | Logits:[4.4243784 1.9938152] | P(0):0.9191                                                                                                               
+  Input 1 -> Rate:0.3212 | Logits:[0.32054907 1.514724  ] | P(1):0.7675                                                                                                             
+  ⚠️  警告：发放率过高，网络处于饱和状态。                                                                                                                                           
+                                                                                                                                                                                    
+[Gen 160 Diagnostic]
+  Input 0 -> Rate:1.0210 | Logits:[4.378395  2.1023042] | P(0):0.9069                                                                                                               
+  Input 1 -> Rate:0.4705 | Logits:[0.159661  2.0960853] | P(1):0.8740                                                                                                               
+  ⚠️  警告：发放率过高，网络处于饱和状态。                                                                                                                                           
+                                                                                                                                                                                    
+[Gen 170 Diagnostic]
+  Input 0 -> Rate:1.2180 | Logits:[4.888194 2.662927] | P(0):0.9025                                                                                                                 
+  Input 1 -> Rate:0.4833 | Logits:[0.6119449 1.5658361] | P(1):0.7219                                                                                                               
+  ⚠️  警告：发放率过高，网络处于饱和状态。                                                                                                                                           
+                                                                                                                                                                                    
+[Gen 180 Diagnostic]
+  Input 0 -> Rate:1.2546 | Logits:[4.911048  2.3876162] | P(0):0.9258                                                                                                               
+  Input 1 -> Rate:0.3469 | Logits:[0.14463396 1.8111074 ] | P(1):0.8411                                                                                                             
+  ⚠️  警告：发放率过高，网络处于饱和状态。                                                                                                                                           
+                                                                                                                                                                                    
+[Gen 190 Diagnostic]
+  Input 0 -> Rate:1.1572 | Logits:[4.5657516 2.2581427] | P(0):0.9095                                                                                                               
+  Input 1 -> Rate:0.7904 | Logits:[2.001683  2.1241698] | P(1):0.5306                                                                                                               
+  ⚠️  警告：发放率过高，网络处于饱和状态。                                                                                                                                           
+                                                                                                                                                                                    
+[Gen 200 Diagnostic]
+  Input 0 -> Rate:0.9286 | Logits:[4.3387046 2.016104 ] | P(0):0.9107                                                                                                               
+  Input 1 -> Rate:0.6242 | Logits:[0.1873488 2.5235443] | P(1):0.9118                                                                                                               
+  ⚠️  警告：发放率过高，网络处于饱和状态。                                                                                                                                           
+                                                                                                                                                                                    
+[Gen 210 Diagnostic]
+  Input 0 -> Rate:1.1775 | Logits:[4.9920287 2.246941 ] | P(0):0.9396                                                                                                               
+  Input 1 -> Rate:0.3594 | Logits:[0.12260705 1.6815706 ] | P(1):0.8262                                                                                                             
+  ⚠️  警告：发放率过高，网络处于饱和状态。                                                                                                                                           
+                                                                                                                                                                                    
+[Gen 220 Diagnostic]
+  Input 0 -> Rate:1.3617 | Logits:[6.266591  2.5266092] | P(0):0.9768                                                                                                               
+  Input 1 -> Rate:0.5678 | Logits:[0.18196256 2.0166004 ] | P(1):0.8623                                                                                                             
+  ⚠️  警告：发放率过高，网络处于饱和状态。                                                                                                                                           
+                                                                                                                                                                                    
+[Gen 230 Diagnostic]
+  Input 0 -> Rate:1.3070 | Logits:[5.5940537 2.371473 ] | P(0):0.9617                                                                                                               
+  Input 1 -> Rate:0.5004 | Logits:[0.12582535 2.3824124 ] | P(1):0.9052                                                                                                             
+  ⚠️  警告：发放率过高，网络处于饱和状态。                                                                                                                                           
+                                                                                                                                                                                    
+[Gen 240 Diagnostic]
+  Input 0 -> Rate:1.2036 | Logits:[5.3378024 2.3077435] | P(0):0.9539                                                                                                               
+  Input 1 -> Rate:0.4465 | Logits:[0.32112947 2.025436  ] | P(1):0.8461                                                                                                             
+  ⚠️  警告：发放率过高，网络处于饱和状态。                                                                                                                                           
+                                                                                                                                                                                    
+[Gen 250 Diagnostic]
+  Input 0 -> Rate:0.7385 | Logits:[2.1751075 1.6322483] | P(0):0.6325                                                                                                               
+  Input 1 -> Rate:0.4326 | Logits:[0.13421284 1.3970141 ] | P(1):0.7795                                                                                                             
+  ⚠️  警告：发放率过高，网络处于饱和状态。                                                                                                                                           
+                                                                                                                                                                                    
+[Gen 260 Diagnostic]
+  Input 0 -> Rate:0.9443 | Logits:[3.8651245 1.807691 ] | P(0):0.8867                                                                                                               
+  Input 1 -> Rate:0.2328 | Logits:[0.04151166 1.6118779 ] | P(1):0.8278                                                                                                             
+  ⚠️  警告：发放率过高，网络处于饱和状态。                                                                                                                                           
+                                                                                                                                                                                    
+[Gen 270 Diagnostic]
+  Input 0 -> Rate:1.1359 | Logits:[5.011028  1.9900297] | P(0):0.9535                                                                                                               
+  Input 1 -> Rate:0.3528 | Logits:[0.19820292 1.5574464 ] | P(1):0.7956                                                                                                             
+  ⚠️  警告：发放率过高，网络处于饱和状态。                                                                                                                                           
+                                                                                                                                                                                    
+[Gen 280 Diagnostic]
+  Input 0 -> Rate:0.9349 | Logits:[3.0633519 1.7846043] | P(0):0.7822                                                                                                               
+  Input 1 -> Rate:0.6025 | Logits:[0.18903118 2.4256222 ] | P(1):0.9035                                                                                                             
+  ⚠️  警告：发放率过高，网络处于饱和状态。                                                                                                                                           
+                                                                                                                                                                                    
+[Gen 290 Diagnostic]
+  Input 0 -> Rate:1.1491 | Logits:[5.0022416 2.1114318] | P(0):0.9474                                                                                                               
+  Input 1 -> Rate:0.5810 | Logits:[0.31391543 2.422878  ] | P(1):0.8918                                                                                                             
+  ⚠️  警告：发放率过高，网络处于饱和状态。                                                                                                                                           
+                                                                                                                                                                                    
+[Gen 300 Diagnostic]
+  Input 0 -> Rate:1.0255 | Logits:[4.2652373 1.6198016] | P(0):0.9337                                                                                                               
+  Input 1 -> Rate:0.6352 | Logits:[0.5046524 2.6349723] | P(1):0.8938                                                                                                               
+  ⚠️  警告：发放率过高，网络处于饱和状态。                                                                                                                                           
+                                                                                                                                                                                    
+[Gen 310 Diagnostic]
+  Input 0 -> Rate:1.2624 | Logits:[4.988053  2.3266451] | P(0):0.9347                                                                                                               
+  Input 1 -> Rate:0.6626 | Logits:[0.34119996 3.0010006 ] | P(1):0.9346                                                                                                             
+  ⚠️  警告：发放率过高，网络处于饱和状态。                                                                                                                                           
+                                                                                                                                                                                    
+[Gen 320 Diagnostic]
+  Input 0 -> Rate:0.9872 | Logits:[5.015858  1.8510256] | P(0):0.9595                                                                                                               
+  Input 1 -> Rate:0.5736 | Logits:[0.13981193 2.4517553 ] | P(1):0.9099                                                                                                             
+  ⚠️  警告：发放率过高，网络处于饱和状态。                                                                                                                                           
+                                                                                                                                                                                    
+[Gen 330 Diagnostic]
+  Input 0 -> Rate:1.3624 | Logits:[5.011027  2.5925267] | P(0):0.9182                                                                                                               
+  Input 1 -> Rate:0.6899 | Logits:[0.16456003 2.848313  ] | P(1):0.9361                                                                                                             
+  ⚠️  警告：发放率过高，网络处于饱和状态。                                                                                                                                           
+                                                                                                                                                                                    
+[Gen 340 Diagnostic]
+  Input 0 -> Rate:1.0021 | Logits:[5.004079  1.7926304] | P(0):0.9613                                                                                                               
+  Input 1 -> Rate:0.3379 | Logits:[0.07669115 1.5912457 ] | P(1):0.8197                                                                                                             
+  ⚠️  警告：发放率过高，网络处于饱和状态。                                                                                                                                           
+                                                                                                                                                                                    
+[Gen 350 Diagnostic]
+  Input 0 -> Rate:0.8472 | Logits:[4.0535192 1.4119794] | P(0):0.9335                                                                                                               
+  Input 1 -> Rate:0.5436 | Logits:[0.4534018 2.1664588] | P(1):0.8472                                                                                                               
+  ⚠️  警告：发放率过高，网络处于饱和状态。                                                                                                                                           
+                                                                                                                                                                                    
+[Gen 360 Diagnostic]
+  Input 0 -> Rate:1.2463 | Logits:[4.829788  2.4596431] | P(0):0.9145                                                                                                               
+  Input 1 -> Rate:0.4685 | Logits:[0.17956038 1.8008807 ] | P(1):0.8350                                                                                                             
+  ⚠️  警告：发放率过高，网络处于饱和状态。                                                                                                                                           
+                                                                                                                                                                                    
+[Gen 370 Diagnostic]
+  Input 0 -> Rate:1.2101 | Logits:[5.2224483 2.358714 ] | P(0):0.9460                                                                                                               
+  Input 1 -> Rate:0.2627 | Logits:[0.06081688 1.2641757 ] | P(1):0.7691                                                                                                             
+  ⚠️  警告：发放率过高，网络处于饱和状态。                                                                                                                                           
+                                                                                                                                                                                    
+[Gen 380 Diagnostic]
+  Input 0 -> Rate:1.1136 | Logits:[5.4721336 1.8950201] | P(0):0.9728                                                                                                               
+  Input 1 -> Rate:0.5699 | Logits:[0.19430016 2.1075969 ] | P(1):0.8714                                                                                                             
+  ⚠️  警告：发放率过高，网络处于饱和状态。                                                                                                                                           
+                                                                                                                                                                                    
+[Gen 390 Diagnostic]
+  Input 0 -> Rate:1.1855 | Logits:[5.6276016 2.2410395] | P(0):0.9673                                                                                                               
+  Input 1 -> Rate:0.2643 | Logits:[0.37398347 1.4443158 ] | P(1):0.7447                                                                                                             
+  ⚠️  警告：发放率过高，网络处于饱和状态。                                                                                                                                           
+                                                                                                                                                                                    
+[Gen 400 Diagnostic]
+  Input 0 -> Rate:1.0092 | Logits:[4.1883545 1.2180455] | P(0):0.9512                                                                                                               
+  Input 1 -> Rate:0.3330 | Logits:[0.23475571 1.590779  ] | P(1):0.7951                                                                                                             
+  ⚠️  警告：发放率过高，网络处于饱和状态。                                                                                                                                           
+                                                                                                                                                                                    
+[Gen 410 Diagnostic]
+  Input 0 -> Rate:1.2214 | Logits:[5.711055  1.8101394] | P(0):0.9802                                                                                                               
+  Input 1 -> Rate:0.5292 | Logits:[0.11779363 2.4940221 ] | P(1):0.9150                                                                                                             
+  ⚠️  警告：发放率过高，网络处于饱和状态。                                                                                                                                           
+                                                                                                                                                                                    
+[Gen 420 Diagnostic]
+  Input 0 -> Rate:1.0345 | Logits:[4.168611 2.332157] | P(0):0.8625                                                                                                                 
+  Input 1 -> Rate:0.5151 | Logits:[0.03205027 2.2573113 ] | P(1):0.9025                                                                                                             
+  ⚠️  警告：发放率过高，网络处于饱和状态。                                                                                                                                           
+                                                                                                                                                                                    
+[Gen 430 Diagnostic]
+  Input 0 -> Rate:1.2589 | Logits:[5.4719615 2.1934037] | P(0):0.9637                                                                                                               
+  Input 1 -> Rate:0.4889 | Logits:[0.5350352 1.4236174] | P(1):0.7086                                                                                                               
+  ⚠️  警告：发放率过高，网络处于饱和状态。                                                                                                                                           
+                                                                                                                                                                                    
+[Gen 440 Diagnostic]
+  Input 0 -> Rate:1.0074 | Logits:[4.3030915 1.5392579] | P(0):0.9407                                                                                                               
+  Input 1 -> Rate:0.6037 | Logits:[0.42494088 2.3746865 ] | P(1):0.8754                                                                                                             
+  ⚠️  警告：发放率过高，网络处于饱和状态。                                                                                                                                           
+                                                                                                                                                                                    
+[Gen 450 Diagnostic]
+  Input 0 -> Rate:1.0778 | Logits:[4.3185105 2.0815425] | P(0):0.9035                                                                                                               
+  Input 1 -> Rate:0.4824 | Logits:[0.6549788 1.7839234] | P(1):0.7556                                                                                                               
+  ⚠️  警告：发放率过高，网络处于饱和状态。                                                                                                                                           
+                                                                                                                                                                                    
+[Gen 460 Diagnostic]
+  Input 0 -> Rate:1.1140 | Logits:[5.4028134 1.8703421] | P(0):0.9716                                                                                                               
+  Input 1 -> Rate:0.4263 | Logits:[0.15244581 2.3560503 ] | P(1):0.9006                                                                                                             
+  ⚠️  警告：发放率过高，网络处于饱和状态。                                                                                                                                           
+                                                                                                                                                                                    
+[Gen 470 Diagnostic]
+  Input 0 -> Rate:0.9589 | Logits:[4.7125444 1.6751599] | P(0):0.9542                                                                                                               
+  Input 1 -> Rate:0.4284 | Logits:[0.2020939 2.0709615] | P(1):0.8663                                                                                                               
+  ⚠️  警告：发放率过高，网络处于饱和状态。                                                                                                                                           
+                                                                                                                                                                                    
+[Gen 480 Diagnostic]
+  Input 0 -> Rate:0.9594 | Logits:[4.858763  1.6679379] | P(0):0.9605                                                                                                               
+  Input 1 -> Rate:0.4322 | Logits:[1.9519066 1.2952752] | P(1):0.3415                                                                                                               
+  ⚠️  警告：发放率过高，网络处于饱和状态。                                                                                                                                           
+                                                                                                                                                                                    
+[Gen 490 Diagnostic]
+  Input 0 -> Rate:1.0592 | Logits:[4.5921845 1.7847903] | P(0):0.9431                                                                                                               
+  Input 1 -> Rate:0.3923 | Logits:[0.46195978 1.82528   ] | P(1):0.7963                                                                                                             
+  ⚠️  警告：发放率过高，网络处于饱和状态。                                                                                                                                           
+                                                                                                                                                                                    
+[Gen 500 Diagnostic]
+  Input 0 -> Rate:1.1243 | Logits:[5.262818  2.3856695] | P(0):0.9467                                                                                                               
+  Input 1 -> Rate:0.7337 | Logits:[0.7990024 2.4487062] | P(1):0.8389                                                                                                               
+  ⚠️  警告：发放率过高，网络处于饱和状态。                                                                                                                                           
+100%|███████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 500/500 [3:04:44<00:00, 22.17s/it]
