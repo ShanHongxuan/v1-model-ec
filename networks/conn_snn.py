@@ -162,3 +162,112 @@ class ConnSNN(nn.Module):
             "spikes_per_ms": jnp.mean(jnp.abs(rate)),
             "avg_i_syn":     jnp.mean(jnp.abs(i_syn))
         }
+
+class ConnSNN_Selected(nn.Module):
+    out_dims: int 
+    readout_indices: tuple # 指定神经元索引
+    
+    num_neurons: int = 256
+    excitatory_ratio: float = 0.5
+    expected_sparsity: float = 0.5
+    rand_init_Vm: bool = True
+    neuron_dtype: jnp.dtype = jnp.float32
+    spike_dtype: jnp.dtype = jnp.int8
+    
+    dt: float = 0.5
+    K_in: float = 10.0
+    K_h: float = 1.0
+    K_out: float = 100.0 # 用作 Scaling
+    
+    tau_syn: float = 5.0
+    tau_Vm: float = 10.0
+    tau_out: float = 10.0
+    tau_Vm_vector: Any = None
+    
+    Vr: float = 0.0
+    Vth: float = 1.0
+    
+    # [关键修复] 确保这两个字段都存在
+    readout_start_step: int = 300 
+    readout_end_step: int = 400
+
+    @nn.compact
+    def __call__(self, carry, x):
+        self.variable("fixed_weights", "dummy", lambda: None)
+        in_dims = x.shape[-1]
+        num_excitatory = round(self.num_neurons * self.excitatory_ratio)
+
+        # 只有 kernel_in 和 kernel_h
+        kernel_in = self.param("kernel_in", nn.initializers.zeros, (in_dims, self.num_neurons), jnp.bool_)
+        kernel_h = self.param("kernel_h", nn.initializers.zeros, (self.num_neurons, self.num_neurons), jnp.bool_)
+        
+        if self.tau_Vm_vector is not None:
+            tau_eff = jnp.array(self.tau_Vm_vector, dtype=self.neuron_dtype)
+        else:
+            tau_eff = self.tau_Vm
+
+        R_in = self.K_in * self.Vth * tau_eff * math.sqrt(1 / (self.expected_sparsity * in_dims))
+        R = self.K_h * self.Vth * tau_eff / self.tau_syn * math.sqrt(1 / (self.expected_sparsity * self.num_neurons))
+        Scale_out = self.K_out 
+
+        alpha_syn = math.exp(-self.dt / self.tau_syn)
+        alpha_out = math.exp(-self.dt / self.tau_out)
+        alpha_Vm = jnp.exp(-self.dt / tau_eff)
+
+        # 动态归一化 (使用 30.0 适配 10 分类)
+        active_pixel_count = jnp.sum(x, axis=-1, keepdims=True)
+        target_activity = 30.0 
+        scale_factor = jnp.clip(target_activity / (active_pixel_count + 1.0), 0.0, 10.0)
+        x_norm = x * scale_factor
+        
+        i_in_seq = conn_dense(kernel_in, x_norm) * R_in
+        if i_in_seq.ndim == 3: i_in_seq = jnp.swapaxes(i_in_seq, 0, 1)
+
+        def _snn_step_seq(loop_carry, i_in_t):
+            v_m, i_syn, rate, spike = loop_carry
+
+            exc_mask = jnp.arange(self.num_neurons) < num_excitatory
+            dale_vector = jnp.where(exc_mask, 1.0, -2.5) # 强化抑制
+            signed_spike = spike.astype(self.neuron_dtype) * dale_vector
+            i_spike = R * conn_dense(kernel_h, signed_spike)
+            
+            i_syn = i_syn * alpha_syn + i_spike
+            v_m = lerp(v_m, self.Vr + i_syn + i_in_t, alpha_Vm)
+            spike_bool = v_m > self.Vth
+            v_m = jnp.where(spike_bool, self.Vr, v_m)
+            
+            spike = spike_bool.astype(self.spike_dtype)
+            rate = lerp(rate, (1 / self.dt) * spike.astype(rate.dtype), alpha_out)
+            return (v_m, i_syn, rate, spike), rate
+
+        final_carry, rate_seq = jax.lax.scan(_snn_step_seq, carry, i_in_seq)
+
+        rate_mean_all_time = jnp.mean(rate_seq, axis=0) 
+        
+        # 将这个平均值塞进 carry 返回，替换掉最后一刻的瞬时 rate
+        v_m_f, i_syn_f, _, spike_f = final_carry
+        modified_final_carry = (v_m_f, i_syn_f, rate_mean_all_time, spike_f)
+
+        # --- 指定窗口读出 (保持不变) ---
+        response_rates = rate_seq[self.readout_start_step : self.readout_end_step]
+        rate_mean_window = jnp.mean(response_rates, axis=0) 
+        indices = jnp.array(self.readout_indices, dtype=jnp.int32)
+        output_raw = jnp.take(rate_mean_window, indices, axis=-1)
+        output = output_raw * Scale_out
+        
+        # 返回修改后的 carry
+        return modified_final_carry, output
+
+    # 复制辅助方法
+    def initial_carry(self, key, batch_size):
+        v_m = jnp.full((batch_size, self.num_neurons), self.Vr, self.neuron_dtype)
+        i_syn = jnp.zeros((batch_size, self.num_neurons), self.neuron_dtype)
+        rate = jnp.zeros((batch_size, self.num_neurons), self.neuron_dtype)
+        spike = jnp.zeros((batch_size, self.num_neurons), self.spike_dtype)
+        if self.rand_init_Vm:
+            v_m = jax.random.uniform(key, (batch_size, self.num_neurons), self.neuron_dtype, self.Vr, self.Vth)
+        return v_m, i_syn, rate, spike
+
+    def carry_metrics(self, carry):
+        v_m, i_syn, rate, spike = carry
+        return {"spikes_per_ms": jnp.mean(jnp.abs(rate)), "avg_i_syn": jnp.mean(jnp.abs(i_syn))}

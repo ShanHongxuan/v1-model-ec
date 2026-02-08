@@ -1,17 +1,23 @@
-# ==================== [TF 预初始化] ====================
+# ==================== [1] TF 预初始化 ====================
 try:
     from utils.mnist_loader import load_mnist_data
-    print(">>> 正在预加载 MNIST 数据以初始化 TensorFlow GPU 环境...")
+    import tensorflow as tf
+    # 强制 TF 内存按需增长，防止与 JAX 抢显存
+    gpus = tf.config.list_physical_devices('GPU')
+    if gpus:
+        for gpu in gpus:
+            tf.config.experimental.set_memory_growth(gpu, True)
+    print(">>> [System] 预加载 MNIST 数据以初始化 GPU 环境...")
     _ = load_mnist_data()
-    print(">>> MNIST 数据预加载完成。")
+    print(">>> [System] 预加载完成。")
     _TF_PREINIT_SUCCESS = True
 except (ImportError, ModuleNotFoundError):
-    print(">>> 未找到 MNIST 环境，将仅支持 Brax 任务。")
+    print(">>> [System] 未找到 MNIST 环境，将仅支持 Brax 任务。")
     _TF_PREINIT_SUCCESS = False
 # =======================================================
 
 from functools import partial
-from typing import Any, Dict, Tuple
+from typing import Any, Dict, Tuple, List
 import time
 import builtins
 import os
@@ -19,11 +25,13 @@ import os
 import jax
 import jax.numpy as jnp
 import numpy as np
+import pandas as pd
 
 import flax
 import optax
 
 from brax import envs
+from brax.envs import wrappers 
 from brax.training.acme import running_statistics
 from brax.training.acme import specs
 
@@ -33,33 +41,34 @@ import wandb
 import optuna
 
 from networks import NETWORKS
+from networks.conn_snn import ConnSNN_Selected, ConnSNN
+NETWORKS["ConnSNN_Selected"] = ConnSNN_Selected
+NETWORKS["ConnSNN"] = ConnSNN
+
 from utils.functions import mean_weight_abs, finitemean, save_obj_to_file
 
+# 强制使用安全随机数实现
 jax.config.update("jax_default_prng_impl", "unsafe_rbg")
 builtins.bfloat16 = jnp.dtype("bfloat16").type
 
+# ==================== [2] 配置与状态类 ====================
 
 @flax.struct.dataclass
 class ESConfig:
     network_cls: Any = None
     optim_cls:   Any = None
     env_cls:     Any = None
-
     pop_size:       int = 10240
     lr:           float = 0.15
     eps:          float = 1e-3
     weight_decay: float = 0.
     warmup_steps:   int = 0
     eval_size:      int = 128
-
     action_dtype: Any   = jnp.float32
     p_dtype:       Any  = jnp.float32
     network_dtype: Any  = jnp.float32
-    
-    # [新增] 控制开关
-    clip_action:   bool = True  # 默认开启 (Brax需要)
-    normalize_obs: bool = True  # 默认开启 (Brax需要)
-
+    clip_action:   bool = True  
+    normalize_obs: bool = True  
 
 @flax.struct.dataclass
 class RunnerState:
@@ -70,7 +79,6 @@ class RunnerState:
     fixed_weights: Any
     opt_state:     Any
 
-
 @flax.struct.dataclass
 class PopulationState:
     network_params: Any
@@ -80,14 +88,30 @@ class PopulationState:
     fitness_sum:    jnp.ndarray
     fitness_n:      jnp.ndarray
 
+# ==================== [3] 辅助函数 ====================
+
+def get_l5_excitatory_indices(csv_path, total_neurons, n_out=10):
+    """筛选 L5 兴奋性神经元索引 (严格复现预处理排序逻辑)"""
+    if not os.path.exists(csv_path):
+        print(f"⚠️  警告: 找不到 {csv_path}，回退到默认前 {n_out} 个。")
+        return tuple(range(n_out))
+    df = pd.read_csv(csv_path)
+    df['EI_rank'] = df['EI'].map({'E': 0, 'I': 1})
+    df_sorted = df.sort_values(['EI_rank', 'simple_id']).reset_index(drop=True)
+    l5e_mask = (df_sorted['layer'] == 'L5') & (df_sorted['EI'] == 'E')
+    l5e_indices = df_sorted[l5e_mask].index.to_numpy()
+    if len(l5e_indices) < n_out: return tuple(l5e_indices.tolist()[:n_out])
+    selected = np.linspace(0, len(l5e_indices)-1, n_out, dtype=int)
+    final_indices = l5e_indices[selected]
+    print(f"✅ 选定 L5E 读出索引: {final_indices}")
+    return tuple(final_indices.tolist())
 
 def _centered_rank_transform(x: jnp.ndarray) -> jnp.ndarray:
     shape = x.shape
-    x     = x.ravel()
+    x = x.ravel()
     x = jnp.argsort(jnp.argsort(x))
     x = x / (len(x) - 1) - .5
     return x.reshape(shape)
-
 
 def _sample_bernoulli_parameter(key: Any, params: Any, sampling_dtype: Any, batch_size: Tuple = ()) -> Any:
     num_vars = len(jax.tree_util.tree_leaves(params))
@@ -98,25 +122,21 @@ def _sample_bernoulli_parameter(key: Any, params: Any, sampling_dtype: Any, batc
         params, jax.tree_util.tree_unflatten(treedef, all_keys))
     return noise
 
-
 def _deterministic_bernoulli_parameter(params: Any, batch_size: Tuple = ()) -> Any:
     return jax.tree_util.tree_map(lambda p: jnp.broadcast_to(p > 0.5, (*batch_size, *p.shape)), params)
 
+# ==================== [4] 核心训练逻辑 ====================
 
-# Evaluate the population for a single step
 def _evaluate_step(pop: PopulationState, runner: RunnerState, conf: ESConfig) -> PopulationState:
     vmapped_apply = jax.vmap(conf.network_cls.apply, ({"params": 0, "fixed_weights": None}, 0, 0))
 
-    # [修改] 根据配置决定是否归一化观测
     if conf.normalize_obs:
-        obs_norm = running_statistics.normalize(pop.env_states.obs, runner.normalizer_state)
+        obs_in = running_statistics.normalize(pop.env_states.obs, runner.normalizer_state)
     else:
-        obs_norm = pop.env_states.obs
+        obs_in = pop.env_states.obs
 
-    new_network_states, act = vmapped_apply({"params": pop.network_params, "fixed_weights": runner.fixed_weights}, pop.network_states, obs_norm)
-    assert act.dtype == conf.network_dtype
-
-    # [修改] 根据配置决定是否截断动作
+    new_network_states, act = vmapped_apply({"params": pop.network_params, "fixed_weights": runner.fixed_weights}, pop.network_states, obs_in)
+    
     if conf.clip_action:
         act = jnp.clip(act, -1, 1)
 
@@ -135,7 +155,6 @@ def _evaluate_step(pop: PopulationState, runner: RunnerState, conf: ESConfig) ->
         done = done.reshape([-1] + [1] * (len(x.shape) - 1))
         return jnp.where(done, x, y)
 
-    # 对于同步训练，这里主要用于兼容接口
     new_env_states = jax.tree_util.tree_map(_where_done, runner.env_reset_pool, new_env_states)
 
     return pop.replace(
@@ -145,7 +164,6 @@ def _evaluate_step(pop: PopulationState, runner: RunnerState, conf: ESConfig) ->
         fitness_sum=new_fitness_sum,
         fitness_n=new_fitness_n
     )
-
 
 @partial(jax.jit, static_argnums=(2,), donate_argnums=(3,))
 def _runner_init(key: Any, network_init_key: Any, conf: ESConfig, init_prob_matrix: Any = None) -> RunnerState:
@@ -164,10 +182,9 @@ def _runner_init(key: Any, network_init_key: Any, conf: ESConfig, init_prob_matr
         bio_prob_jnp = jnp.array(init_prob_matrix, dtype=conf.p_dtype)
         def _init_mapper(path, param):
             if path[-1] == 'kernel_h':
-                if param.shape != bio_prob_jnp.shape:
-                    return jnp.full_like(param, 0.5, conf.p_dtype)
+                if param.shape != bio_prob_jnp.shape: return jnp.full_like(param, 0.5)
                 return bio_prob_jnp
-            return jnp.full_like(param, 0.5, conf.p_dtype)
+            return jnp.full_like(param, 0.5)
         network_params = jax.tree_util.tree_map_with_path(_init_mapper, network_params)
     else:
         network_params = jax.tree_map(lambda x: jnp.full_like(x, 0.5, conf.p_dtype), network_params)
@@ -184,7 +201,6 @@ def _runner_init(key: Any, network_init_key: Any, conf: ESConfig, init_prob_matr
     )
     return runner
 
-
 @partial(jax.jit, donate_argnums=(0,), static_argnums=(1,))
 def _runnner_run(runner: RunnerState, conf: ESConfig) -> Tuple[RunnerState, Dict]:
     metrics = {}
@@ -193,16 +209,12 @@ def _runnner_run(runner: RunnerState, conf: ESConfig) -> Tuple[RunnerState, Dict
 
     train_params = _sample_bernoulli_parameter(run_key, runner.params, conf.network_dtype, (conf.pop_size - conf.eval_size, ))
     eval_params  = _deterministic_bernoulli_parameter(runner.params, (conf.eval_size, ))
-    network_params = jax.tree_map(lambda train, eval: jnp.concatenate([train, eval], axis=0), train_params, eval_params)
+    network_params = jax.tree_map(lambda t, e: jnp.concatenate([t, e], axis=0), train_params, eval_params)
 
-    def _split_fitness(x):
-        return jnp.split(x, [conf.pop_size - conf.eval_size, ])
-
-    # [同步训练逻辑]
     common_env_key = jax.random.split(env_key, 1)[0]
     broadcasted_keys = jnp.repeat(jnp.expand_dims(common_env_key, 0), conf.pop_size, axis=0)
     synchronized_env_states = conf.env_cls.reset(broadcasted_keys)
-    
+
     pop = PopulationState(
         network_params=network_params,
         network_states=conf.network_cls.initial_carry(carry_key, conf.pop_size),
@@ -212,182 +224,169 @@ def _runnner_run(runner: RunnerState, conf: ESConfig) -> Tuple[RunnerState, Dict
         fitness_n=jnp.zeros(conf.pop_size, dtype=jnp.int32)
     )
 
-    def _eval_stop_cond(p: PopulationState) -> jnp.ndarray:
-        return ~jnp.all(p.fitness_n >= 1)
-
+    def _eval_stop_cond(p): return ~jnp.all(p.fitness_n >= 1)
     pop = jax.lax.while_loop(_eval_stop_cond, (lambda p: _evaluate_step(p, runner, conf)), pop)
 
-    # 仅当启用归一化时更新 Normalizer
-    if conf.warmup_steps <= 0 and conf.normalize_obs:
-        runner = runner.replace(normalizer_state=running_statistics.update(runner.normalizer_state, pop.env_states.obs))
-
-    if hasattr(conf.network_cls, "carry_metrics"):
-        metrics.update(conf.network_cls.carry_metrics(pop.network_states))
-
-    fitness, eval_fitness = _split_fitness(pop.fitness_sum / pop.fitness_n)
-
+    fitness, eval_fitness = jnp.split(pop.fitness_sum / pop.fitness_n, [conf.pop_size - conf.eval_size])
     weight = _centered_rank_transform(fitness)
+    
     def _nes_grad(p, theta):
         w = weight.reshape((-1,) + (1,) * (theta.ndim - 1)).astype(p.dtype)
-        # [修复] 显式转换 theta
         return -jnp.mean(w * (theta.astype(jnp.float32) - p), axis=0)
 
-    grads = jax.tree_map(lambda p, theta: _nes_grad(p, theta[:(conf.pop_size - conf.eval_size)]), runner.params, pop.network_params)
-
+    grads = jax.tree_map(lambda p, t: _nes_grad(p, t[:(conf.pop_size - conf.eval_size)]), runner.params, pop.network_params)
     updates, new_opt_state = conf.optim_cls.update(grads, runner.opt_state, runner.params)
     new_params = optax.apply_updates(runner.params, updates)
-    new_params = jax.tree_map(lambda p: jnp.clip(p, conf.eps, 1 - conf.eps), new_params)
+    new_params = jax.tree_util.tree_map(lambda p: jnp.clip(p, conf.eps, 1 - conf.eps), new_params)
 
     runner = runner.replace(params=new_params, opt_state=new_opt_state)
-
-    metrics.update({
-        "fitness":        jnp.mean(fitness),
-        "eval_fitness":   jnp.mean(eval_fitness),
-        "sparsity":       mean_weight_abs(new_params)
-    })
+    metrics.update({"fitness": jnp.mean(fitness), "eval_fitness": jnp.mean(eval_fitness), "sparsity": mean_weight_abs(new_params)})
     return runner, metrics
 
+# ==================== [5] MNIST 平衡批次逻辑 ====================
+
+@partial(jax.jit, static_argnums=(0,))
+def evaluate_batch_fitness(network, params, fixed_weights, single_obs, single_label):
+    pop_size = jax.tree_util.tree_leaves(params)[0].shape[0]
+    obs_broadcast = jnp.repeat(jnp.expand_dims(single_obs, 0), pop_size, axis=0)
+    carry = network.initial_carry(jax.random.PRNGKey(0), pop_size)
+    vmapped_apply = jax.vmap(network.apply, in_axes=({'params': 0, 'fixed_weights': None}, 0, 0))
+    _, output = vmapped_apply({'params': params, 'fixed_weights': fixed_weights}, carry, obs_broadcast)
+    logits = output - jnp.max(output, axis=-1, keepdims=True)
+    probs = jax.nn.softmax(logits)
+    return probs[:, single_label]
+
+@partial(jax.jit, donate_argnums=(0,), static_argnums=(3, 4))
+def train_step_balanced(runner, batch_imgs, batch_lbls, es_conf, network):
+    conf_pop_size = es_conf.pop_size
+    conf_eval_size = es_conf.eval_size
+    new_key, run_key = jax.random.split(runner.key)
+    runner = runner.replace(key=new_key)
+    train_params = _sample_bernoulli_parameter(run_key, runner.params, es_conf.network_dtype, (conf_pop_size - conf_eval_size, ))
+    eval_params  = _deterministic_bernoulli_parameter(runner.params, (conf_eval_size, ))
+    pop_params = jax.tree_util.tree_map(lambda t, e: jnp.concatenate([t, e], axis=0), train_params, eval_params)
+    
+    def _scan_body(cum_fitness, idx):
+        img = batch_imgs[idx]; lbl = batch_lbls[idx]
+        rewards = evaluate_batch_fitness(network, pop_params, runner.fixed_weights, img, lbl)
+        return cum_fitness + rewards, None
+
+    total_fitness, _ = jax.lax.scan(_scan_body, jnp.zeros(conf_pop_size), jnp.arange(batch_imgs.shape[0]))
+    avg_fitness = total_fitness / batch_imgs.shape[0]
+    fit_train, fit_eval = jnp.split(avg_fitness, [conf_pop_size - conf_eval_size])
+    weight = _centered_rank_transform(fit_train)
+    
+    def _nes_grad(p, theta):
+        w = weight.reshape((-1,) + (1,) * (theta.ndim - 1)).astype(es_conf.p_dtype)
+        return -jnp.mean(w * (theta.astype(jnp.float32) - p), axis=0)
+
+    grads = jax.tree_map(lambda p, theta: _nes_grad(p, theta[:(conf_pop_size - conf_eval_size)]), runner.params, pop_params)
+    updates, new_opt_state = es_conf.optim_cls.update(grads, runner.opt_state, runner.params)
+    new_params = optax.apply_updates(runner.params, updates)
+    new_params = jax.tree_util.tree_map(lambda p: jnp.clip(p, es_conf.eps, 1 - es_conf.eps), new_params)
+    runner = runner.replace(params=new_params, opt_state=new_opt_state)
+    return runner, jnp.mean(fit_train), jnp.mean(fit_eval), jnp.mean(jnp.abs(grads['kernel_h']))
+
+def probe_network_10class(network, runner, env, key):
+    binary_params = jax.tree_util.tree_map(lambda p: p > 0.5, runner.params)
+    variables = {'params': binary_params, 'fixed_weights': runner.fixed_weights}
+    results = {i: {"logit": None} for i in range(10)}
+    found_count = 0
+    rng = key
+    for _ in range(150):
+        rng, subkey = jax.random.split(rng)
+        state = env.reset(subkey) 
+        label = int(state.current_label)
+        if results[label]["logit"] is None:
+            carry = network.initial_carry(subkey, 1)
+            _, output = network.apply(variables, carry, state.obs)
+            results[label] = {"logit": output[0]}
+            found_count += 1
+        if found_count == 10: break
+    return results
+
+# ==================== [6] Main 主函数 ====================
 
 def main(conf):
     conf = OmegaConf.merge({
-        "seed": 0,
-        "task": "humanoid",
-        "task_conf": {},
-        "episode_conf": {
-            "max_episode_length": 1000,
-            "action_repeat": 1
-        },
-        "total_generations": 1000,
-        "save_every": 50,
-        "use_bio_probability": True,
-        "bio_prob_mix_factor": 1.0,
-        "network_type": "ConnSNN",
-        "network_conf": {},
-        "es_conf": {}
+        "seed": 0, "task": "mnist", "total_generations": 1000, "save_every": 50,
+        "use_bio_probability": True, "bio_prob_mix_factor": 0.5,
+        "network_type": "ConnSNN", "network_conf": {}, "es_conf": {},
+        "episode_conf": {"max_episode_length": 1, "action_repeat": 1}
     }, conf)
 
-    print(">>> 正在检查并加载生物数据...")
-    has_bio_data = False
-    bio_tau_Vm = None
-    bio_prob_matrix = None
-    
+    print(">>> 正在加载生物物理与连接数据...")
+    has_bio_data, bio_tau_Vm, bio_prob_matrix, l5e_indices = False, None, None, None
+    num_neurons_loaded = 509
+
     if os.path.exists('neuron_physics.npz'):
         try:
-            physics_data = np.load('neuron_physics.npz')
-            bio_num_neurons = int(physics_data['num_neurons'])
-            bio_exc_ratio = float(physics_data['excitatory_ratio'])
-            bio_tau_Vm = physics_data['tau_Vm']
-            
-            conf = OmegaConf.merge(conf, {
-                "network_conf": {
-                    "num_neurons": bio_num_neurons,
-                    "excitatory_ratio": bio_exc_ratio,
-                }
-            })
+            phys = np.load('neuron_physics.npz')
+            num_neurons_loaded = int(phys['num_neurons'])
+            bio_tau_Vm = tuple(phys['tau_Vm'].tolist())
+            l5e_indices = get_l5_excitatory_indices('../dataset/mice_unnamed/neurons.csv.gz', num_neurons_loaded, 10)
+            conf = OmegaConf.merge(conf, {"network_conf": {"num_neurons": num_neurons_loaded, "excitatory_ratio": float(phys['excitatory_ratio'])}})
             has_bio_data = True
-            print(f"✅ 成功加载物理参数: 神经元={bio_num_neurons}")
+            if conf.use_bio_probability and os.path.exists('init_probability.npy'):
+                raw_prob = np.load('init_probability.npy')
+                mix = float(conf.bio_prob_mix_factor)
+                bio_prob_matrix = mix * raw_prob + (1.0 - mix) * 0.5
+                print(f"✅ 已应用混合因子 {mix}")
+        except Exception as e: print(f"❌ 加载失败: {e}")
 
-            if conf.use_bio_probability:
-                if os.path.exists('init_probability.npy'):
-                    raw_prob_matrix = np.load('init_probability.npy')
-                    mix = float(conf.bio_prob_mix_factor)
-                    bio_prob_matrix = mix * raw_prob_matrix + (1.0 - mix) * 0.5
-                    print(f"✅ 已应用混合因子 {mix}")
-                else:
-                    print("⚠️ 未找到 init_probability.npy")
-            else:
-                bio_prob_matrix = None
-        except Exception as e:
-            print(f"❌ 加载出错: {e}")
-            has_bio_data = False
-    else:
-        print("ℹ️ 未找到 neuron_physics.npz")
-
-    conf = OmegaConf.merge({
-        "project_name": f"E-SNN-{conf.task}",
-        "run_name":     f"EC {conf.seed} {conf.network_type} {time.strftime('%H:%M %m-%d')}"
-    }, conf)
+    conf = OmegaConf.merge({"project_name": f"E-SNN-{conf.task}", "run_name": f"EC {conf.seed} {time.strftime('%H:%M')}"}, conf)
     es_conf = ESConfig(**conf.es_conf)
 
-    # [Task Logic]
     if conf.task == "mnist":
-        if not _TF_PREINIT_SUCCESS:
-            raise RuntimeError("MNIST Env 缺失")
         from envs.mnist_env import MnistEnv
-        from utils.mnist_loader import load_mnist_data
+        images, labels = load_mnist_data('train')
+        class_images = [images[labels == i] for i in range(10)]
+        val_imgs = np.concatenate([c[:8] for c in class_images])
+        val_labels = np.concatenate([np.full(8, i) for i in range(10)])
         
-        mnist_images, mnist_labels = load_mnist_data('train')
-        dt_ms = conf.network_conf.get('dt', 0.5)
-        snn_steps = 200 
+        def _make_batch(imgs):
+            probs = jnp.expand_dims(imgs * (1000.0 * 0.5 / 1000.0), 1)
+            probs = jnp.repeat(probs, 400, axis=1)
+            return jax.random.bernoulli(jax.random.PRNGKey(999), probs).astype(jnp.float32)
         
-        base_env = MnistEnv(images=mnist_images, labels=mnist_labels, 
-                            presentation_steps=snn_steps, dt_ms=dt_ms)
-        env = envs.wrappers.VmapWrapper(base_env)
-        conf.episode_conf.max_episode_length = 1 
-        
-        # [修改] 针对 MNIST 的关键配置
-        # 禁用动作截断，允许 K_out 发挥作用
-        es_conf = es_conf.replace(clip_action=False)
-        # 禁用观测归一化，保持 0/1 稀疏性
-        es_conf = es_conf.replace(normalize_obs=False)
-        
+        train_spikes = _make_batch(val_imgs)
+        train_lbls = jnp.array(val_labels, dtype=jnp.int32)
+        base_env = MnistEnv(images, labels, steps_pre_stim=100, steps_stim=200, steps_response=100, dt_ms=0.5)
+        env = wrappers.VmapWrapper(base_env)
+        es_conf = es_conf.replace(clip_action=False, normalize_obs=False)
+        conf.network_type = "ConnSNN_Selected"
+        conf.network_conf.update({"readout_indices": l5e_indices, "readout_start_step": 300, "readout_end_step": 400})
     else:
-        # Brax 任务保持默认 (Clip=True, Norm=True)
         env = envs.get_environment(conf.task, **conf.task_conf)
         env = envs.wrappers.EpisodeWrapper(env, conf.episode_conf.max_episode_length, conf.episode_conf.action_repeat)
         env = envs.wrappers.VmapWrapper(env)
 
-    # Network
     network_cls = NETWORKS[conf.network_type]
-    network_kwargs = {
-        "out_dims": env.action_size,
-        "neuron_dtype": es_conf.network_dtype,
-        **conf.network_conf
-    }
-    if has_bio_data and bio_tau_Vm is not None:
-        network_kwargs["tau_Vm_vector"] = tuple(bio_tau_Vm.tolist())
+    network = network_cls(out_dims=env.action_size, tau_Vm_vector=bio_tau_Vm, **conf.network_conf)
+    optim = optax.chain(optax.scale_by_adam(mu_dtype=es_conf.p_dtype), optax.scale(-es_conf.lr))
+    es_conf = es_conf.replace(network_cls=network, optim_cls=optim, env_cls=env)
 
-    network = network_cls(**network_kwargs)
+    key_run, key_init = jax.random.split(jax.random.PRNGKey(conf.seed))
+    runner = _runner_init(key_run, key_init, es_conf, init_prob_matrix=bio_prob_matrix)
 
-    optim = optax.chain(
-        optax.scale_by_adam(mu_dtype=es_conf.p_dtype),
-        (optax.add_decayed_weights(es_conf.weight_decay) if es_conf.weight_decay > 0 else optax.identity()),
-        optax.scale(-es_conf.lr)
-    )
-
-    es_conf = es_conf.replace(
-        network_cls=network,
-        optim_cls=optim,
-        env_cls=env
-    )
-
-    key_run, key_network_init = jax.random.split(jax.random.PRNGKey(conf.seed))
-    
-    runner = _runner_init(key_run, key_network_init, es_conf, init_prob_matrix=bio_prob_matrix)
-
-    conf.save_model_path = "models/{}/{}/".format(conf.project_name, conf.run_name)
-
-    if "log_group" in conf:
-        wandb.init(reinit=True, project=f"(G) E-SNN-{conf.task}", group=conf.log_group, name=conf.run_name, config=OmegaConf.to_container(conf))
-    else:
-        wandb.init(reinit=True, project=conf.project_name, name=conf.run_name, config=OmegaConf.to_container(conf))
+    wandb.init(project=conf.project_name, group=conf.get("log_group", "Default"), name=conf.run_name, config=OmegaConf.to_container(conf))
 
     for step in tqdm(range(1, conf.total_generations + 1)):
-        runner, metrics = _runnner_run(runner, es_conf)
-        metrics = jax.device_get(metrics)
+        if conf.task == "mnist":
+            runner, fit, eval_fit, grad = train_step_balanced(runner, train_spikes, train_lbls, es_conf, network)
+            metrics = {"fitness": fit, "eval_fitness": eval_fit, "grad_norm": grad, "sparsity": mean_weight_abs(runner.params)}
+        else:
+            runner, metrics = _runnner_run(runner, es_conf)
+
         wandb.log(metrics, step=step)
 
+        if conf.task == "mnist" and step % 20 == 0:
+            res = probe_network_10class(network, runner, base_env, jax.random.PRNGKey(step))
+            correct = sum([1 for i in range(10) if np.argmax(res[i]["logit"]) == i])
+            tqdm.write(f"\n[Gen {step}] Probe Acc: {correct/10:.2f} | Fit: {metrics['fitness']:.3f}")
+
         if not (step % conf.save_every):
-            fn = conf.save_model_path + str(step)
-            save_obj_to_file(fn, dict(
-                conf=conf,
-                state=dict(
-                    normalizer_state=runner.normalizer_state,
-                    fixed_weights=runner.fixed_weights,
-                    params=runner.params
-                )
-            ))
-            wandb.save(fn)
+            save_obj_to_file(f"models/{conf.project_name}/{conf.run_name}/{step}", {"params": runner.params, "fixed_weights": runner.fixed_weights})
 
     return metrics
 

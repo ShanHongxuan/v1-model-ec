@@ -18,13 +18,18 @@ from tqdm import tqdm
 from functools import partial
 import os
 from typing import Any, Tuple, Dict
+import pandas as pd 
 
 from networks import NETWORKS
+from networks.conn_snn import ConnSNN_Selected # [关键] 导入新网络类
 from envs.mnist_env import MnistEnv
 from brax.envs import wrappers
 from brax.training.acme import running_statistics
 from brax.training.acme import specs
 from utils.functions import mean_weight_abs
+
+# 手动注册新网络，防止 __init__.py 未更新
+NETWORKS["ConnSNN_Selected"] = ConnSNN_Selected
 
 # ==================== 配置类 ====================
 @flax.struct.dataclass
@@ -81,7 +86,8 @@ def _sample_bernoulli_parameter(key, params, dtype, batch_size=()):
 def _deterministic_bernoulli_parameter(params, batch_size=()):
     return jax.tree_util.tree_map(lambda p: jnp.broadcast_to(p > 0.5, (*batch_size, *p.shape)), params)
 
-# ==================== 评估步骤 ====================
+# ==================== 评估步骤 (Evaluate Step) ====================
+# 主要用于兼容接口，实际上主要逻辑在 train_step_balanced
 def _evaluate_step(pop, runner, conf):
     vmapped_apply = jax.vmap(conf.network_cls.apply, ({"params": 0, "fixed_weights": None}, 0, 0))
     
@@ -90,9 +96,6 @@ def _evaluate_step(pop, runner, conf):
         pop.network_states, pop.env_states.obs
     )
     
-    # 禁用 Clip
-    # act = jnp.clip(act, -1, 1) 
-        
     new_env_states = conf.env_cls.step(pop.env_states, act)
     
     new_fitness_totrew = pop.fitness_totrew + new_env_states.reward
@@ -108,86 +111,125 @@ def _evaluate_step(pop, runner, conf):
         fitness_n=new_fitness_n
     )
 
-# ==================== [核心修改] 训练一代 (Run Generation) ====================
-@partial(jax.jit, donate_argnums=(0,), static_argnums=(1, 2))
-def _run_generation(runner, conf, eval_batch_indices):
-    """
-    eval_batch_indices: 本代要评估的图片索引列表 (Device Array)
-    """
-    new_key, run_key, carry_key = jax.random.split(runner.key, 3)
-    runner = runner.replace(key=new_key)
-
-    # 1. 采样种群参数
-    train_params = _sample_bernoulli_parameter(run_key, runner.params, conf.network_dtype, (conf.pop_size - conf.eval_size, ))
-    eval_params  = _deterministic_bernoulli_parameter(runner.params, (conf.eval_size, ))
-    network_params = jax.tree_map(lambda t, e: jnp.concatenate([t, e], axis=0), train_params, eval_params)
-
-    # 初始化累计 Fitness
-    total_fitness = jnp.zeros(conf.pop_size)
-    total_eval_n = jnp.zeros(conf.pop_size, dtype=jnp.int32)
-
-    # 2. [循环评估] 遍历 eval_batch_indices 中的每一张图片
-    # scan 的 carry 是 (total_fitness, total_eval_n)
-    # scan 的 x 是 image_index
-    def _eval_one_image(carry, img_idx):
-        fit_sum, fit_n = carry
-        
-        # 构造本轮的环境状态 (强制所有人看同一张图 img_idx)
-        # 注意: MnistEnv.reset 实际上是随机取图。
-        # 我们需要一种方法指定 index。
-        # HACK: 我们传入一个特殊的 seed，让 Env 内部解析出 index?
-        # 不，最好的办法是直接调用 env.reset 但传入特定的 key，
-        # 或者我们修改 Env 让它支持指定 Index。
-        # 为了不改 Env，我们这里用一种简化的假设：
-        # 我们假设外部已经准备好了 env_states (通过 hack reset)，或者
-        # 我们利用 Env 的 reset 机制，通过精心构造的 key 来控制 (太难)。
-        
-        # 简单方案：直接在这里构造 EnvState，跳过 reset 的随机逻辑
-        # 我们需要访问全局的 images 和 labels，这在 JIT 中比较麻烦。
-        # 最佳方案：MnistEnv 支持直接传入 image_index
-        
-        # 既然我们不想改 Env 太多，我们这里用一个小技巧：
-        # 我们把 images 传给 reset 的 key? 不行。
-        
-        # 回退一步：我们在 Python 端循环，不把循环 JIT 进去。
-        # 这样我们可以每次调用 reset 时传入特定的数据。
-        # 但这会慢。
-        
-        # 为了高性能，我们假设 MnistEnv.reset(key) 中的 key 就是 image_index!
-        # 我们需要修改 MnistEnv 吗？是的，微调一下最好。
-        # 但现在我们先假设我们可以通过某种方式控制。
-        
-        # [临时方案] 
-        # 我们在 _run_generation 外部做循环！
-        # 这样 _run_generation 只跑一张图。
-        # 不，那样梯度更新就太频繁了。
-        
-        # [最终方案]
-        # 这里的 env_cls 是 VmapWrapper(MnistEnv)。
-        # 我们调用 conf.env_cls.reset(indices) 
-        # 我们需要修改 MnistEnv 的 reset 让他接受 index。
-        
-        # 为了不卡在这里，我们用一个假设：
-        # eval_batch_indices 是 (N_imgs, Pop_Size, 2) 的 Keys
-        # 我们直接用这些 Keys reset。
-        # 只要外部保证这些 Keys 对应了平衡的 0/1 样本即可。
-        # 但 MnistEnv 是随机取样...
-        
-        return carry, None # 占位
-
-    # --- 重新设计 ---
-    # 我们不在 JIT 内部做多图循环，那太复杂了。
-    # 我们在 Python 端做循环，累积梯度，然后更新一次。
-    # 这就是标准的 Batch Gradient Descent。
+# ==================== [核心] 自定义单步训练函数 ====================
+@partial(jax.jit, static_argnums=(0,))
+def evaluate_batch(network, params, fixed_weights, batch_obs, batch_labels):
+    # params: (Pop, ...)
+    # batch_obs: (Batch, Time, Feat)
     
-    return runner, None # 占位，见下文 main 函数修改
+    pop_size = jax.tree_util.tree_leaves(params)[0].shape[0]
+    
+    # 扩展输入以匹配 PopSize -> (Pop, Batch, Time, Feat)
+    # 但 vmap 只能处理单一维度映射。
+    # 策略：我们将 Batch 维度作为 vmap 的一部分吗？不，Batch 应该在内部处理或外部循环。
+    # 正确策略：obs_broadcast: (Pop, Batch, Time, Feat) 太大了。
+    # 更好的策略：evaluate_batch 处理的是单个 Image (Batch=1)，我们在外部 scan 循环 Batch。
+    
+    # 修正后的逻辑：batch_obs 是单个样本 (Time, Feat)
+    # obs_broadcast: (Pop, Time, Feat)
+    obs_broadcast = jnp.repeat(jnp.expand_dims(batch_obs, 0), pop_size, axis=0)
+    
+    carry = network.initial_carry(jax.random.PRNGKey(0), pop_size)
+    
+    vmapped_apply = jax.vmap(
+        network.apply, 
+        in_axes=({'params': 0, 'fixed_weights': None}, 0, 0)
+    )
+    
+    # output: (Pop, 2)
+    _, output = vmapped_apply(
+        {'params': params, 'fixed_weights': fixed_weights}, 
+        carry, 
+        obs_broadcast
+    )
+    
+    logits = output - jnp.max(output, axis=-1, keepdims=True)
+    probs = jax.nn.softmax(logits)
+    rewards = probs[:, batch_labels] # batch_labels 是标量
+    
+    return rewards
 
-# ==================== [6] 探针 ====================
+@partial(jax.jit, donate_argnums=(0,), static_argnums=(3, 4))
+def train_step_balanced(runner, batch_imgs, batch_lbls, es_conf, network):
+    conf_pop_size = es_conf.pop_size
+    conf_eval_size = es_conf.eval_size
+    
+    new_key, run_key = jax.random.split(runner.key)
+    runner = runner.replace(key=new_key)
+    
+    train_params = _sample_bernoulli_parameter(run_key, runner.params, es_conf.network_dtype, (conf_pop_size - conf_eval_size, ))
+    eval_params  = _deterministic_bernoulli_parameter(runner.params, (conf_eval_size, ))
+    pop_params = jax.tree_util.tree_map(lambda t, e: jnp.concatenate([t, e], axis=0), train_params, eval_params)
+    
+    # 循环评估 Batch 中的每一张图
+    def _scan_body(cum_fitness, idx):
+        img = batch_imgs[idx] # (Time, Feat)
+        lbl = batch_lbls[idx] # Scalar
+        rewards = evaluate_batch(network, pop_params, runner.fixed_weights, img, lbl)
+        return cum_fitness + rewards, None
+
+    total_fitness, _ = jax.lax.scan(_scan_body, jnp.zeros(conf_pop_size), jnp.arange(batch_imgs.shape[0]))
+    avg_fitness = total_fitness / batch_imgs.shape[0]
+    
+    fit_train, fit_eval = jnp.split(avg_fitness, [conf_pop_size - conf_eval_size])
+    weight = _centered_rank_transform(fit_train)
+    
+    def _nes_grad(p, theta):
+        w = weight.reshape((-1,) + (1,) * (theta.ndim - 1)).astype(es_conf.p_dtype)
+        return -jnp.mean(w * (theta.astype(jnp.float32) - p), axis=0)
+
+    grads = jax.tree_util.tree_map(lambda p, theta: _nes_grad(p, theta[:(conf_pop_size - conf_eval_size)]), runner.params, pop_params)
+    
+    updates, new_opt_state = es_conf.optim_cls.update(grads, runner.opt_state, runner.params)
+    new_params = optax.apply_updates(runner.params, updates)
+    new_params = jax.tree_util.tree_map(lambda p: jnp.clip(p, es_conf.eps, 1 - es_conf.eps), new_params)
+    
+    runner = runner.replace(params=new_params, opt_state=new_opt_state)
+    grad_norm = jnp.mean(jnp.abs(grads['kernel_h']))
+    
+    return runner, jnp.mean(fit_train), jnp.mean(fit_eval), grad_norm
+
+# ==================== [新增辅助] L5 兴奋性神经元筛选器 ====================
+def get_l5_excitatory_indices(csv_path, total_neurons):
+    """
+    读取 CSV，复现预处理时的排序逻辑，并筛选出 L5 Excitatory 神经元的索引。
+    """
+    print(f">>> 正在筛选 L5 Excitatory 神经元 (From {csv_path})...")
+    if not os.path.exists(csv_path):
+        print(f"⚠️  警告: 找不到 {csv_path}，将回退到默认的前 2 个神经元。")
+        return tuple(range(2))
+        
+    df = pd.read_csv(csv_path)
+    
+    # 1. 复现 preprocess_data.py 的排序逻辑
+    df['EI_rank'] = df['EI'].map({'E': 0, 'I': 1})
+    df_sorted = df.sort_values(['EI_rank', 'simple_id']).reset_index(drop=True)
+    
+    if len(df_sorted) != total_neurons:
+        print(f"⚠️  警告: CSV 神经元数量 ({len(df_sorted)}) 与 物理参数 ({total_neurons}) 不一致！")
+    
+    # 2. 筛选 L5 Excitatory
+    l5e_mask = (df_sorted['layer'] == 'L5') & (df_sorted['EI'] == 'E')
+    l5e_indices = df_sorted[l5e_mask].index.to_numpy()
+    
+    print(f"    - 找到 {len(l5e_indices)} 个 L5 Excitatory 神经元。")
+    
+    if len(l5e_indices) < 2:
+        print("❌ 错误: L5E 神经元不足 2 个。")
+        return tuple(range(2))
+        
+    # 3. 选取 2 个代表 (均匀分布)
+    selected_indices = np.linspace(0, len(l5e_indices) - 1, 2, dtype=int)
+    final_indices = l5e_indices[selected_indices]
+    
+    print(f"    - 选定 2 个读出神经元 ID: {final_indices}")
+    return tuple(final_indices.tolist())
+
+# ==================== 探针 ====================
 def probe_network(network, runner, env, key):
     binary_params = jax.tree_util.tree_map(lambda p: p > 0.5, runner.params)
     variables = {'params': binary_params, 'fixed_weights': runner.fixed_weights}
     
-    # 存储结果
     results = {0: {"logit": None, "prob": None, "rate": None}, 
                1: {"logit": None, "prob": None, "rate": None}}
     
@@ -199,12 +241,10 @@ def probe_network(network, runner, env, key):
         
         if label in results and results[label]["logit"] is None:
             carry = network.initial_carry(subkey, 1)
-            # 运行网络
             final_carry, output = network.apply(variables, carry, state.obs)
             
             logits = output[0]
             probs = jax.nn.softmax(logits)
-            # final_carry[2] 是 rate_final, shape 为 (1, 509)
             avg_rate = jnp.mean(final_carry[2]) 
             
             results[label]["logit"] = logits
@@ -218,9 +258,9 @@ def probe_network(network, runner, env, key):
 
 # ==================== [7] 主程序 ====================
 def main():
-    print("=== 二分类平衡批次训练 (Balanced Batch Training) ===")
+    print("=== 二分类 L5E读出 平衡批次训练 (Time-Windowed) ===")
     
-    # 1. 数据准备 (保持不变)
+    # 1. 数据准备
     print(">>> 准备平衡数据集...")
     images, labels = load_mnist_data('train')
     mask0 = labels == 0
@@ -230,50 +270,84 @@ def main():
     val_imgs = np.concatenate([imgs0[:16], imgs1[:16]])
     val_labels = np.concatenate([np.zeros(16), np.ones(16)])
     
-    # 2. 配置
-    K_IN = 5.0
-    K_H = 0.1
-    K_OUT = 0.1
+    # 2. 配置 (时间参数)
+    STEPS_PRE = 100   # 50ms (静默)
+    STEPS_STIM = 200  # 100ms (刺激)
+    STEPS_RESP = 100  # 50ms (响应/静默)
+    TOTAL_STEPS = 400
     
+    # 读出窗口: 刺激结束后的 50ms
+    READOUT_START = STEPS_PRE + STEPS_STIM
+    READOUT_END = TOTAL_STEPS
+    
+    # 物理参数
+    K_IN = 2.0
+    K_H = 0.05
+    K_OUT = 20.0
+    
+    # 获取生物数据与读出索引
+    NEURON_CSV = '../dataset/mice_unnamed/neurons.csv.gz' # 请确认路径
+    
+    tau_vec = None
+    prob_mat = None
+    num_neurons_loaded = 509
+    l5e_indices = (0, 1) # 默认
+    
+    if os.path.exists('neuron_physics.npz'):
+        phys = np.load('neuron_physics.npz')
+        tau_vec = tuple(phys['tau_Vm'].tolist())
+        num_neurons_loaded = int(phys['num_neurons'])
+        
+        # [核心] 获取 L5E 索引 (只取 2 个)
+        l5e_indices = get_l5_excitatory_indices(NEURON_CSV, num_neurons_loaded)
+        # 确保只取前2个用于二分类
+        if len(l5e_indices) > 2:
+            l5e_indices = l5e_indices[:2]
+    else:
+        print("⚠️ 未找到 physics 文件，使用默认索引。")
+
     conf = OmegaConf.create({
         "seed": 42,
         "pop_size": 1024,
-        "lr": 0.2,
+        "lr": 0.1,
         "total_generations": 500,
         "batch_size": 16,
-        
-        # [修复] 添加缺失的参数
-        "eval_size": 128,  # 评估集大小
-        "eps": 0.001,      # 概率截断阈值
+        "eval_size": 128,
+        "eps": 0.001,
         
         "network_conf": {
-            "num_neurons": 509, "excitatory_ratio": 0.76,
-            "K_in": K_IN, "K_h": K_H, "K_out": K_OUT, "dt": 0.1
+            "num_neurons": num_neurons_loaded, 
+            "excitatory_ratio": 0.76,
+            "K_in": K_IN, "K_h": K_H, "K_out": K_OUT, "dt": 0.5,
+            
+            # [关键] 指定 2 个读出神经元 + 时间窗
+            "readout_indices": l5e_indices,
+            "readout_start_step": READOUT_START,
+            "readout_end_step": READOUT_END
         },
         "use_bio": True, "mix": 0.5
     })
     
+    # 加载概率矩阵
+    if conf.use_bio and os.path.exists('init_probability.npy'):
+        raw = np.load('init_probability.npy')
+        prob_mat = conf.mix * raw + (1.0 - conf.mix) * 0.5
+        print(f">>> 生物概率已加载 (Mix={conf.mix})")
+
     # 3. 环境与网络
-    # 注意：我们这里用全量数据初始化 Env，但在 reset 时我们会 hack 它
-    snn_steps = 200
-    # 仅使用 0/1 数据集
-    all_imgs_2c = np.concatenate([imgs0, imgs1])
-    all_lbls_2c = np.concatenate([np.zeros(len(imgs0)), np.ones(len(imgs1))])
-    
-    base_env = MnistEnv(all_imgs_2c, all_lbls_2c, presentation_steps=snn_steps, input_hz=100.0, dt_ms=0.5)
+    # [修改] 传入时间结构参数
+    base_env = MnistEnv(
+        np.concatenate([imgs0, imgs1]), 
+        np.concatenate([np.zeros(len(imgs0)), np.ones(len(imgs1))]), 
+        input_hz=200.0, dt_ms=0.5,
+        steps_pre_stim=STEPS_PRE, 
+        steps_stim=STEPS_STIM, 
+        steps_response=STEPS_RESP
+    )
     base_env.action_size = 2
     env = wrappers.VmapWrapper(base_env)
     
-    network_cls = NETWORKS["ConnSNN"]
-    tau_vec = None
-    prob_mat = None
-    if os.path.exists('neuron_physics.npz'):
-        phys = np.load('neuron_physics.npz')
-        tau_vec = tuple(phys['tau_Vm'].tolist())
-        if conf.use_bio and os.path.exists('init_probability.npy'):
-            raw = np.load('init_probability.npy')
-            prob_mat = conf.mix * raw + (1.0 - conf.mix) * 0.5
-
+    network_cls = NETWORKS["ConnSNN_Selected"]
     network = network_cls(out_dims=2, tau_Vm_vector=tau_vec, **conf.network_conf)
     
     # 4. ES Setup
@@ -285,21 +359,20 @@ def main():
     
     # 初始化
     key_run, key_init = jax.random.split(jax.random.PRNGKey(conf.seed))
-    dummy_obs = jnp.zeros((conf.pop_size, 200, 196))
+    dummy_obs = jnp.zeros((conf.pop_size, TOTAL_STEPS, 196))
     init_carry = network.initial_carry(key_init, conf.pop_size)
     vars_init = network.init(key_init, init_carry, dummy_obs)
     
     net_params = vars_init['params']
     if prob_mat is not None:
         bio_jnp = jnp.array(prob_mat)
-        def _mapper(path, p):
-            return bio_jnp if path[-1] == 'kernel_h' else jnp.full_like(p, 0.5)
+        def _mapper(path, p): return bio_jnp if path[-1] == 'kernel_h' else jnp.full_like(p, 0.5)
         net_params = jax.tree_util.tree_map_with_path(_mapper, net_params)
     else:
         net_params = jax.tree_map(lambda x: jnp.full_like(x, 0.5), net_params)
         
     opt_state = optim.init(net_params)
-    env_pool = env.reset(jax.random.split(key_init, conf.pop_size)) # Dummy pool
+    env_pool = env.reset(jax.random.split(key_init, conf.pop_size))
     
     runner = RunnerState(
         key=key_run,
@@ -310,132 +383,82 @@ def main():
         opt_state=opt_state
     )
 
-    # ================= [关键] 自定义单步训练函数 =================
-    # 我们将 _evaluate_step 提取出来，支持指定输入
-    @jax.jit
-    def evaluate_batch(params, fixed_weights, batch_obs, batch_labels):
-        pop_size = jax.tree_util.tree_leaves(params)[0].shape[0]
-        
-        # 扩展输入以匹配 PopSize
-        # obs: (Pop, Time, Feat)
-        obs_broadcast = jnp.repeat(jnp.expand_dims(batch_obs, 0), pop_size, axis=0)
-        
-        # 初始化状态
-        carry = network.initial_carry(jax.random.PRNGKey(0), pop_size)
-        
-        # [核心修复] 使用 vmap 进行批量评估
-        # in_axes: 
-        #   variables: {'params': 0 (种群维), 'fixed_weights': None (不分种群)}
-        #   carry: 0 (每个个体有自己的状态)
-        #   x: 0 (每个个体有自己的输入)
-        vmapped_apply = jax.vmap(
-            network.apply, 
-            in_axes=({'params': 0, 'fixed_weights': None}, 0, 0)
-        )
-        
-        # 调用 vmap 后的函数
-        _, output = vmapped_apply(
-            {'params': params, 'fixed_weights': fixed_weights}, 
-            carry, 
-            obs_broadcast
-        )
-        
-        # 计算奖励 (Softmax)
-        logits = output - jnp.max(output, axis=-1, keepdims=True)
-        probs = jax.nn.softmax(logits)
-        
-        rewards = probs[:, batch_labels] 
-        
-        return rewards
-
-    @partial(jax.jit, donate_argnums=(0,))
-    def train_step_balanced(runner, batch_imgs, batch_lbls):
-        # 1. 采样参数
-        new_key, run_key = jax.random.split(runner.key)
-        runner = runner.replace(key=new_key)
-        
-        # 注意：这里使用 es_conf.network_dtype 是对的
-        train_params = _sample_bernoulli_parameter(run_key, runner.params, es_conf.network_dtype, (conf.pop_size - conf.eval_size, ))
-        eval_params  = _deterministic_bernoulli_parameter(runner.params, (conf.eval_size, ))
-        
-        pop_params = jax.tree_util.tree_map(lambda t, e: jnp.concatenate([t, e], axis=0), train_params, eval_params)
-        
-        # 2. 循环评估
-        def _scan_body(cum_fitness, idx):
-            img = batch_imgs[idx] 
-            lbl = batch_lbls[idx] 
-            
-            rewards = evaluate_batch(pop_params, runner.fixed_weights, img, lbl)
-            return cum_fitness + rewards, None
-
-        total_fitness, _ = jax.lax.scan(_scan_body, jnp.zeros(conf.pop_size), jnp.arange(batch_imgs.shape[0]))
-        
-        avg_fitness = total_fitness / batch_imgs.shape[0]
-        
-        # 3. 分割 Train/Eval
-        fit_train, fit_eval = jnp.split(avg_fitness, [conf.pop_size - conf.eval_size])
-        
-        # 4. 梯度更新
-        weight = _centered_rank_transform(fit_train)
-        
-        def _nes_grad(p, theta):
-            w = weight.reshape((-1,) + (1,) * (theta.ndim - 1)).astype(p.dtype)
-            return -jnp.mean(w * (theta.astype(jnp.float32) - p), axis=0)
-
-        grads = jax.tree_util.tree_map(lambda p, theta: _nes_grad(p, theta[:(conf.pop_size - conf.eval_size)]), runner.params, pop_params)
-        
-        # [修复] 使用 es_conf.optim_cls 而不是 conf.optim_cls
-        updates, new_opt_state = es_conf.optim_cls.update(grads, runner.opt_state, runner.params)
-        
-        new_params = optax.apply_updates(runner.params, updates)
-        new_params = jax.tree_util.tree_map(lambda p: jnp.clip(p, conf.eps, 1 - conf.eps), new_params)
-        
-        runner = runner.replace(params=new_params, opt_state=new_opt_state)
-        
-        # 计算梯度模长用于诊断
-        grad_norm = jnp.mean(jnp.abs(grads['kernel_h']))
-        
-        return runner, jnp.mean(fit_train), jnp.mean(fit_eval), grad_norm
     # --- 训练循环 ---
-    print(">>> 开始训练 (Batch Size = 16, Balanced)...")
+    print(">>> 开始训练...")
     pbar = tqdm(range(1, conf.total_generations + 1))
     
-    # 预先生成泊松脉冲 (为了加速，我们不每次 reset，而是重用一组数据)
-    # 构造 16 个固定的泊松序列用于训练 (8个0, 8个1)
-    # 注意：在真实训练中应该每代换数据，但为了过拟合测试，固定数据更好
     rng_data = jax.random.PRNGKey(999)
     
-    def make_poisson_batch(key, imgs, lbls):
-        # imgs: (B, 196)
-        probs = imgs * (100.0 * 0.5 / 1000.0) # 100Hz
-        probs = jnp.expand_dims(probs, 1) # (B, 1, 196)
-        probs = jnp.repeat(probs, snn_steps, axis=1) # (B, T, 196)
-        spikes = jax.random.bernoulli(key, probs).astype(jnp.float32)
+    # [修改] 生成时序数据 (3阶段)
+    def make_temporal_batch(key, imgs, lbls):
+        B = imgs.shape[0]
+        rngs = jax.random.split(key, B)
+        def _gen_one(rng, img):
+            base = img * (1000.0 * 0.5 / 1000.0)
+            silence = jnp.zeros_like(base)
+            seq = jnp.concatenate([
+                jnp.repeat(jnp.expand_dims(silence, 0), STEPS_PRE, axis=0),
+                jnp.repeat(jnp.expand_dims(base, 0), STEPS_STIM, axis=0),
+                jnp.repeat(jnp.expand_dims(silence, 0), STEPS_RESP, axis=0)
+            ], axis=0)
+            return jax.random.bernoulli(rng, seq).astype(jnp.float32)
+        spikes = jax.vmap(_gen_one)(rngs, imgs)
         return spikes, lbls
 
-    train_spikes, train_lbls = make_poisson_batch(rng_data, val_imgs, val_labels) # (16, 200, 196)
+    train_spikes, train_lbls = make_temporal_batch(rng_data, val_imgs, val_labels)
 
     for step in pbar:
-        runner, fit, eval_fit, grad = train_step_balanced(runner, train_spikes, train_lbls.astype(jnp.int32))
+        # 运行一代训练
+        runner, fit, eval_fit, grad = train_step_balanced(runner, train_spikes, train_lbls.astype(jnp.int32), es_conf, network)
         
         desc = f"Fit:{fit:.3f} | Eval:{eval_fit:.3f} | Grad:{grad:.5f}"
         
-        # 探针
+        # [核心修改] 增强的探针输出
         if step % 10 == 0:
-            res0, res1 = probe_network(network, runner, base_env, jax.random.PRNGKey(step))
+            results = probe_network(network, runner, base_env, jax.random.PRNGKey(step))
+            
+            # 获取结果
+            res0 = results[0]
+            res1 = results[1]
             
             if res0["logit"] is not None and res1["logit"] is not None:
-                tqdm.write(f"\n[Gen {step} Diagnostic]")
-                # 打印数字 0 的表现
-                tqdm.write(f"  Input 0 -> Rate:{res0['rate']:.4f} | Logits:{np.array(res0['logit'])} | P(0):{res0['prob'][0]:.4f}")
-                # 打印数字 1 的表现
-                tqdm.write(f"  Input 1 -> Rate:{res1['rate']:.4f} | Logits:{np.array(res1['logit'])} | P(1):{res1['prob'][1]:.4f}")
+                # 转换数据以便打印
+                l0 = np.array(res0["logit"])
+                p0 = np.array(res0["prob"])
+                r0 = float(res0["rate"])
                 
-                # 提示
-                if res0['rate'] < 0.001:
-                    tqdm.write("  ⚠️  警告：发放率极低，信号可能中断。")
-                elif res0['rate'] > 0.5:
-                    tqdm.write("  ⚠️  警告：发放率过高，网络处于饱和状态。")
+                l1 = np.array(res1["logit"])
+                p1 = np.array(res1["prob"])
+                r1 = float(res1["rate"])
+                
+                # 计算差异 (Diff)
+                diff0 = l0[0] - l0[1] # 输入0时，Logit[0] 比 Logit[1] 大多少 (越大越好)
+                diff1 = l1[1] - l1[0] # 输入1时，Logit[1] 比 Logit[0] 大多少 (越大越好)
+                
+                # 计算 Logits 的绝对范围 (用于判断 K_out)
+                range0 = np.max(l0) - np.min(l0)
+                range1 = np.max(l1) - np.min(l1)
+                avg_range = (range0 + range1) / 2.0
+
+                tqdm.write(f"\n[Gen {step} Diagnostic] Avg Logit Range: {avg_range:.2f}")
+                tqdm.write(f"  Input 0 -> Rate:{r0:.3f} | Logits:{l0} | P(0):{p0[0]:.4f} | Diff: {diff0:.2f}")
+                tqdm.write(f"  Input 1 -> Rate:{r1:.3f} | Logits:{l1} | P(1):{p1[1]:.4f} | Diff: {diff1:.2f}")
+                
+                # [K_out 调节建议]
+                if avg_range < 2.0:
+                    tqdm.write("  💡 提示: Logits 差异太小，Softmax 梯度微弱。建议 -> 增大 K_out")
+                elif avg_range > 50.0:
+                    tqdm.write("  💡 提示: Logits 差异极大，Softmax 已饱和。建议 -> 减小 K_out (如果不收敛)")
+                else:
+                    tqdm.write("  ✅ 提示: Logits 范围适中 (黄金区间 5.0 ~ 30.0)")
+
+                # [发放率监控]
+                if r0 > 0.5 or r1 > 0.5:
+                    tqdm.write("  ⚠️ 警告: 发放率过高 (饱和风险) -> 建议减小 K_in 或增大抑制")
+                elif r0 < 0.01 and r1 < 0.01:
+                    tqdm.write("  ⚠️ 警告: 发放率过低 (静默风险) -> 建议增大 K_in")
+
+        pbar.set_description(desc)
 
 if __name__ == "__main__":
     main()
