@@ -1,62 +1,101 @@
-# Evolving Connectivity for Recurrent Spiking Neural Networks Repository
+# Bio-inspired Evolving Connectivity for Recurrent Spiking Neural Networks
 
-This repository contains the implementation of the paper [Evolving Connectivity for Recurrent Spiking Neural Networks](https://arxiv.org/abs/2305.17650). It includes the Evolutionary Connectivity (EC) algorithm, Recurrent Spiking Neural Networks (RSNN), and the Evolution Strategies (ES) baseline implemented in JAX.
+This repository is an advanced extension of the [Evolving Connectivity (EC)](https://arxiv.org/abs/2305.17650) framework. It integrates **biological constraints** from the mouse visual cortex (VISp) into Recurrent Spiking Neural Networks (RSNNs) to solve computer vision tasks (MNIST).
+
+Key features include:
+*   **Biological Initialization**: Network connectivity and neuron parameters ($\tau_m$) are initialized using biological data (Allen Institute / Blue Brain Project data).
+*   **ConnSNN_Selected Architecture**: A novel readout mechanism that selects specific Layer 5 Excitatory (L5E) neurons as output nodes, mimicking biological functional columns, instead of using a fully connected readout layer.
+*   **Poisson Encoding**: Converts static images into dynamic Poisson spike trains with input energy normalization.
+*   **Optimized Training**: Implements "Synchronized Balanced Batch Training" to stabilize evolutionary gradients for stochastic SNNs.
 
 ## Getting Started
 
-### Prerequisites
+### 1. Prerequisites
 
-1. [Install JAX](https://github.com/google/jax#installation)
+Ensure you have a Python environment (Python 3.8+ recommended).
 
-2. [Install W&B](https://github.com/wandb/wandb) and log in to your account to view metrics
+1.  **Install JAX**: Follow the [official guide](https://github.com/google/jax#installation) to install JAX with GPU support (highly recommended).
+2.  **Install Dependencies**:
+    ```bash
+    pip install -r requirements.txt
+    pip install tensorflow tensorflow-datasets pandas
+    ```
+    *Note: `tensorflow` is required for efficient data loading and GPU memory management.*
 
-3. Install the required dependencies:
+3.  **WandB Setup**:
+    Install and login to Weights & Biases to visualize training metrics (Fitness, Firing Rate, etc.).
+    ```bash
+    pip install wandb
+    wandb login
+    ```
 
-```bash
-pip install -r requirements.txt
-```
+### 2. Data Preparation
 
-### Precautions
+To run the bio-inspired experiments, you must place the pre-processed biological data files in the root directory:
 
-- Brax v1 is required (`brax<0.9`) to reproduce our experiments. Brax v2 has completely rewritten the physics engine and adopted a different reward function.
-- Due to the inherent numerical stochasticity in Brax's physics simulations, variations in results can occur even when using a fixed seed.
+*   `neuron_physics.npz`: Contains neuron physical parameters (Tau, etc.) and metadata.
+*   `init_probability.npy`: The biological connection probability matrix.
+*   `../dataset/mice_unnamed/neurons.csv.gz`: (Path configurable in code) Metadata for L5E neuron selection.
 
 ## Usage
 
-### Training EC with RSNN
+This project focuses on two main scripts for training RSNNs on MNIST.
 
-To set parameters, use the command-line format of [OmegaConf](https://omegaconf.readthedocs.io/en/2.3_branch/usage.html#id15). For example:
+### 1. 2-Class Classification (Debug & Fast Validation)
 
-```
-python ec.py task=humanoid
-```
+`ec_2class.py` is designed for rapid experimentation on a subset of MNIST (digits 0 vs 1). It includes detailed diagnostic probes (Logits, Firing Rates) printed to the console.
 
-### Running experiment sets
-
-To reproduce the Brax locomotion experiments using EC-RSNN:
-
-```
-python exp_launcher.py include=conf_experiment/ec_brax.yaml
+**Run command:**
+```bash
+python ec_2class.py
 ```
 
-To reproduce the ES experiments:
+*   **Default Configuration**:
+    *   Pop Size: 1048
+    *   Generations: 500
+    *   Physics: $K_{in}=2.0, K_{h}=0.1, K_{out}=20.0$
+    *   Input: 200 Hz Poisson spikes
 
-- Deep RNN (GRU, LSTM)
+### 2. 10-Class Classification (Full Training)
 
+`ec.py` is the main entry point for the full MNIST 10-digit classification task. It uses the `ConnSNN_Selected` architecture with 10 specific L5E readout neurons.
+
+**Run command:**
+```bash
+python ec.py
 ```
-python exp_launcher.py include=conf_experiment/rnn_brax.yaml
+
+**Customizing Parameters (CLI):**
+You can override any configuration parameter from the command line using OmegaConf syntax.
+
+*   **Adjusting Biological Prior:**
+    *   `use_bio_probability=True`: Use biological connection matrix.
+    *   `bio_prob_mix_factor=1。0`:  Set to `1.0` for pure bio, `0.0` for pure random.
+
+*   **Adjusting Physics Dynamics:**
+    *   `network_conf.K_in=2.0`: Input current gain.
+    *   `network_conf.K_h=0.1`: Recurrent weight gain (Inhibition/Excitation balance).
+    *   `network_conf.K_out=20.0`: Output scaling factor.
+
+**Example: Running a Pure Random Baseline**
+```bash
+python ec.py use_bio_probability=False run_name="Random_Baseline"
 ```
 
-- Densely weighted RSNN
-
+**Example: Running Strong Bio-Prior with tuned dynamics**
+```bash
+python ec.py bio_prob_mix_factor=0.8 network_conf.K_in=3.0 network_conf.K_h=0.1
 ```
-python exp_launcher.py include=conf_experiment/dense_snn_brax.yaml
-```
 
-**Note**: The experiment launcher will automatically allocate all idle GPUs on your machine and run experiments in parallel.
+## Key Modules
+
+*   `ec.py`: Main training loop implementing Evolution Strategies (NES) with balanced mini-batches.
+*   `networks/conn_snn.py`: Contains `ConnSNN_Selected`. Implements LIF dynamics, Dale's Law, and selected neuron readout.
+*   `envs/mnist_env.py`: Custom JAX-compatible environment that converts MNIST images into time-tensorized Poisson spike trains.
 
 ## Citation
 
+Original paper:
 ```
 @inproceedings{wang2023evolving,
     title={Evolving Connectivity for Recurrent Spiking Neural Networks},
