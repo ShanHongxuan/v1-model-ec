@@ -1,0 +1,118 @@
+_wandb:
+    value:
+        cli_version: 0.21.3
+        e:
+            apovotv0ul3u8zkxy3z1epcvk98o46cw:
+                args:
+                    - task=mnist
+                    - project_name=E-SNN-Mnist-Sweep
+                    - log_group=K_Sweep_20260207_2046
+                    - run_name=kin5.0_kh0.05
+                    - total_generations=200
+                    - es_conf.pop_size=1024
+                    - es_conf.lr=0.1
+                    - network_conf.K_in=5.0
+                    - network_conf.K_h=0.05
+                    - network_conf.K_out=20.0
+                    - use_bio_probability=true
+                    - bio_prob_mix_factor=1.0
+                codePath: ec.py
+                codePathLocal: ec.py
+                cpu_count: 5
+                cpu_count_logical: 10
+                cudaVersion: "12.7"
+                disk:
+                    /:
+                        total: "1081101176832"
+                        used: "165232558080"
+                email: 3102259390@qq.com
+                executable: /home/mzsk/miniconda3/envs/ec_py309/bin/python
+                git:
+                    commit: 209cc205ac326756388b12bed6d3b5c94501ff05
+                gpu: NVIDIA GeForce RTX 4060 Laptop GPU
+                gpu_count: 1
+                gpu_nvidia:
+                    - architecture: Ada
+                      memoryTotal: "8585740288"
+                      name: NVIDIA GeForce RTX 4060 Laptop GPU
+                      uuid: GPU-95140831-d184-a55e-29ee-17d461e54cbc
+                host: r
+                memory:
+                    total: "12542758912"
+                os: Linux-6.6.87.2-microsoft-standard-WSL2-x86_64-with-glibc2.39
+                program: /home/mzsk/code/EvolvingConnectivity-master/ec.py
+                python: CPython 3.9.23
+                root: /home/mzsk/code/EvolvingConnectivity-master
+                startedAt: "2026-02-07T15:13:58.660339Z"
+                writerId: apovotv0ul3u8zkxy3z1epcvk98o46cw
+        m: []
+        python_version: 3.9.23
+        t:
+            "1":
+                - 2
+                - 3
+                - 12
+                - 35
+                - 45
+            "2":
+                - 2
+                - 3
+                - 12
+                - 35
+                - 45
+            "3":
+                - 13
+                - 16
+                - 61
+            "4": 3.9.23
+            "5": 0.21.3
+            "12": 0.21.3
+            "13": linux-x86_64
+bio_prob_mix_factor:
+    value: 1
+episode_conf:
+    value:
+        action_repeat: 1
+        max_episode_length: 1
+es_conf:
+    value:
+        lr: 0.1
+        pop_size: 1024
+log_group:
+    value: K_Sweep_20260207_2046
+network_conf:
+    value:
+        K_h: 0.05
+        K_in: 5
+        K_out: 20
+        excitatory_ratio: 0.7642436149312377
+        num_neurons: 509
+        readout_end_step: 400
+        readout_indices:
+            - 187
+            - 199
+            - 211
+            - 223
+            - 235
+            - 248
+            - 260
+            - 272
+            - 284
+            - 297
+        readout_start_step: 300
+network_type:
+    value: ConnSNN_Selected
+project_name:
+    value: E-SNN-Mnist-Sweep
+run_name:
+    value: kin5.0_kh0.05
+save_every:
+    value: 50
+seed:
+    value: 0
+task:
+    value: mnist
+total_generations:
+    value: 200
+use_bio_probability:
+    value: true

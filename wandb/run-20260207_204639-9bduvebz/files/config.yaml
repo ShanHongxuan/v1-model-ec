@@ -1,0 +1,67 @@
+_wandb:
+    value:
+        cli_version: 0.21.3
+        m: []
+        python_version: 3.9.23
+        t:
+            "1":
+                - 2
+                - 3
+                - 12
+                - 35
+                - 45
+            "3":
+                - 13
+                - 16
+            "4": 3.9.23
+            "5": 0.21.3
+            "12": 0.21.3
+            "13": linux-x86_64
+bio_prob_mix_factor:
+    value: 1
+episode_conf:
+    value:
+        action_repeat: 1
+        max_episode_length: 1
+es_conf:
+    value:
+        lr: 0.1
+        pop_size: 1024
+log_group:
+    value: K_Sweep_20260207_2046
+network_conf:
+    value:
+        K_h: 0.05
+        K_in: 2
+        K_out: 20
+        excitatory_ratio: 0.7642436149312377
+        num_neurons: 509
+        readout_end_step: 400
+        readout_indices:
+            - 187
+            - 199
+            - 211
+            - 223
+            - 235
+            - 248
+            - 260
+            - 272
+            - 284
+            - 297
+        readout_start_step: 300
+network_type:
+    value: ConnSNN_Selected
+project_name:
+    value: E-SNN-Mnist-Sweep
+run_name:
+    value: kin2.0_kh0.05
+save_every:
+    value: 50
+seed:
+    value: 0
+task:
+    value: mnist
+total_generations:
+    value: 200
+use_bio_probability:
+    value: true

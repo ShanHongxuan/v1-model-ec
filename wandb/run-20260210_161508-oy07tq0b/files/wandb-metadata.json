@@ -1,0 +1,38 @@
+{
+  "os": "Linux-6.6.87.2-microsoft-standard-WSL2-x86_64-with-glibc2.39",
+  "python": "CPython 3.9.23",
+  "startedAt": "2026-02-10T08:15:08.962284Z",
+  "program": "/home/mzsk/code/EvolvingConnectivity-master/ec_2class.py",
+  "codePath": "ec_2class.py",
+  "codePathLocal": "ec_2class.py",
+  "git": {
+    "commit": "3884131a9ba2848e6dcd4d8d0d5db1f4943670d8"
+  },
+  "email": "3102259390@qq.com",
+  "root": "/home/mzsk/code/EvolvingConnectivity-master",
+  "host": "r",
+  "executable": "/home/mzsk/miniconda3/envs/ec_py309/bin/python",
+  "cpu_count": 5,
+  "cpu_count_logical": 10,
+  "gpu": "NVIDIA GeForce RTX 4060 Laptop GPU",
+  "gpu_count": 1,
+  "disk": {
+    "/": {
+      "total": "1081101176832",
+      "used": "165425233920"
+    }
+  },
+  "memory": {
+    "total": "12542763008"
+  },
+  "gpu_nvidia": [
+    {
+      "name": "NVIDIA GeForce RTX 4060 Laptop GPU",
+      "memoryTotal": "8585740288",
+      "architecture": "Ada",
+      "uuid": "GPU-95140831-d184-a55e-29ee-17d461e54cbc"
+    }
+  ],
+  "cudaVersion": "12.7",
+  "writerId": "8xrw1fksl4mqba292bisc9aogx8c51se"
+}

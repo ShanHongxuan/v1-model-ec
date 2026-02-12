@@ -1,0 +1,124 @@
+_wandb:
+    value:
+        cli_version: 0.21.3
+        e:
+            8siq50ely8onivv5jcrzmbmo50joyaxw:
+                args:
+                    - --task
+                    - mnist
+                    - --total_generations
+                    - "1000"
+                    - --use_bio_probability
+                    - "true"
+                    - --bio_prob_mix_factor
+                    - "0.5"
+                    - --es_conf.lr
+                    - "0.15"
+                    - --network_conf.K_in
+                    - "2.0"
+                    - --project_name
+                    - E-SNN-mnist
+                    - --log_group
+                    - BioVsRandom_Sweep_20260112_1157
+                    - --run_name
+                    - bio_p=true_mix=0.5_lr=0.15_kin=2.0
+                codePath: ec.py
+                codePathLocal: ec.py
+                cpu_count: 5
+                cpu_count_logical: 10
+                cudaVersion: "12.7"
+                disk:
+                    /:
+                        total: "1081101176832"
+                        used: "152869416960"
+                email: 3102259390@qq.com
+                executable: /home/mzsk/miniconda3/envs/ec_py309/bin/python
+                gpu: NVIDIA GeForce RTX 4060 Laptop GPU
+                gpu_count: 1
+                gpu_nvidia:
+                    - architecture: Ada
+                      memoryTotal: "8585740288"
+                      name: NVIDIA GeForce RTX 4060 Laptop GPU
+                      uuid: GPU-95140831-d184-a55e-29ee-17d461e54cbc
+                host: r
+                memory:
+                    total: "12542763008"
+                os: Linux-6.6.87.2-microsoft-standard-WSL2-x86_64-with-glibc2.39
+                program: /home/mzsk/code/EvolvingConnectivity-master/ec.py
+                python: CPython 3.9.23
+                root: /home/mzsk/code/EvolvingConnectivity-master
+                startedAt: "2026-01-12T12:51:22.599616Z"
+                writerId: 8siq50ely8onivv5jcrzmbmo50joyaxw
+        m: []
+        python_version: 3.9.23
+        t:
+            "1":
+                - 12
+                - 35
+                - 45
+            "2":
+                - 12
+                - 35
+                - 45
+            "3":
+                - 3
+                - 13
+                - 16
+                - 61
+            "4": 3.9.23
+            "5": 0.21.3
+            "10":
+                - 20
+            "12": 0.21.3
+            "13": linux-x86_64
+"0":
+    value:
+        "5": null
+        "15": null
+"2":
+    value:
+        "0": null
+"1000":
+    value: null
+BioVsRandom_Sweep_20260112_1157:
+    value: null
+E-SNN-mnist:
+    value: null
+bio_p:
+    value: true_mix=0.5_lr=0.15_kin=2.0
+bio_prob_mix_factor:
+    value: null
+episode_conf:
+    value:
+        action_repeat: 1
+        max_episode_length: 1000
+es_conf:
+    value:
+        lr: null
+log_group:
+    value: null
+mnist:
+    value: null
+network_conf:
+    value:
+        K_in: null
+network_type:
+    value: ConnSNN
+project_name:
+    value: null
+run_name:
+    value: null
+save_every:
+    value: 50
+save_model_path:
+    value: models/E-SNN-humanoid/EC 0 ConnSNN 20:51 01-12/
+seed:
+    value: 0
+task:
+    value: null
+total_generations:
+    value: null
+"true":
+    value: null
+use_bio_probability:
+    value: null

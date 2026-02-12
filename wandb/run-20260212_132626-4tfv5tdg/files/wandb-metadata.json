@@ -1,0 +1,39 @@
+{
+  "os": "Linux-6.6.87.2-microsoft-standard-WSL2-x86_64-with-glibc2.39",
+  "python": "CPython 3.9.23",
+  "startedAt": "2026-02-12T05:26:26.475846Z",
+  "program": "/home/mzsk/code/v1-model-ec/ec_2class.py",
+  "codePath": "ec_2class.py",
+  "codePathLocal": "ec_2class.py",
+  "git": {
+    "remote": "https://github.com/ShanHongxuan/v1-model-ec.git",
+    "commit": "34b8b6f5c0d43a86616a1050dc755ae403c99d49"
+  },
+  "email": "3102259390@qq.com",
+  "root": "/home/mzsk/code/v1-model-ec",
+  "host": "r",
+  "executable": "/home/mzsk/miniconda3/envs/ec_py309/bin/python",
+  "cpu_count": 5,
+  "cpu_count_logical": 10,
+  "gpu": "NVIDIA GeForce RTX 4060 Laptop GPU",
+  "gpu_count": 1,
+  "disk": {
+    "/": {
+      "total": "1081101176832",
+      "used": "148608774144"
+    }
+  },
+  "memory": {
+    "total": "12542763008"
+  },
+  "gpu_nvidia": [
+    {
+      "name": "NVIDIA GeForce RTX 4060 Laptop GPU",
+      "memoryTotal": "8585740288",
+      "architecture": "Ada",
+      "uuid": "GPU-95140831-d184-a55e-29ee-17d461e54cbc"
+    }
+  ],
+  "cudaVersion": "12.7",
+  "writerId": "o0qpfsl1sjinzjewny7tlvoi2ddmrqpz"
+}

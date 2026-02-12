@@ -1,0 +1,115 @@
+_wandb:
+    value:
+        cli_version: 0.21.3
+        e:
+            n1t0jrvq0qqexnertl6qh3kl043c56yh:
+                args:
+                    - task=mnist
+                    - total_generations=500
+                    - use_bio_probability=true
+                    - bio_prob_mix_factor=1.0
+                    - es_conf.lr=0.1
+                    - network_conf.K_in=0.14
+                    - network_conf.K_h=0.08
+                    - network_conf.dt=0.5
+                    - network_conf.sim_time=0.5
+                    - episode_conf.max_episode_length=1
+                    - env_conf.max_rate_hz=
+                    - project_name=E-SNN-mnist
+                    - log_group=Final_K_Neighborhood_Sweep_20260128_1715
+                    - run_name=mix=1.0_kh=0.08_kin=0.14
+                codePath: ec.py
+                codePathLocal: ec.py
+                cpu_count: 5
+                cpu_count_logical: 10
+                cudaVersion: "12.7"
+                disk:
+                    /:
+                        total: "1081101176832"
+                        used: "169262702592"
+                email: 3102259390@qq.com
+                executable: /home/mzsk/miniconda3/envs/ec_py309/bin/python
+                git:
+                    commit: cfdef473dccb4acb0bb46c040cc24feebba053d2
+                gpu: NVIDIA GeForce RTX 4060 Laptop GPU
+                gpu_count: 1
+                gpu_nvidia:
+                    - architecture: Ada
+                      memoryTotal: "8585740288"
+                      name: NVIDIA GeForce RTX 4060 Laptop GPU
+                      uuid: GPU-95140831-d184-a55e-29ee-17d461e54cbc
+                host: r
+                memory:
+                    total: "12542758912"
+                os: Linux-6.6.87.2-microsoft-standard-WSL2-x86_64-with-glibc2.39
+                program: /home/mzsk/code/EvolvingConnectivity-master/ec.py
+                python: CPython 3.9.23
+                root: /home/mzsk/code/EvolvingConnectivity-master
+                startedAt: "2026-01-28T09:41:58.108339Z"
+                writerId: n1t0jrvq0qqexnertl6qh3kl043c56yh
+        m: []
+        python_version: 3.9.23
+        t:
+            "1":
+                - 2
+                - 3
+                - 12
+                - 35
+                - 45
+            "2":
+                - 2
+                - 3
+                - 12
+                - 35
+                - 45
+            "3":
+                - 3
+                - 13
+                - 16
+                - 61
+            "4": 3.9.23
+            "5": 0.21.3
+            "10":
+                - 20
+            "12": 0.21.3
+            "13": linux-x86_64
+bio_prob_mix_factor:
+    value: 1
+env_conf:
+    value:
+        max_rate_hz: null
+episode_conf:
+    value:
+        action_repeat: 1
+        max_episode_length: 1
+es_conf:
+    value:
+        lr: 0.1
+log_group:
+    value: Final_K_Neighborhood_Sweep_20260128_1715
+network_conf:
+    value:
+        K_h: 0.08
+        K_in: 0.14
+        dt: 0.5
+        excitatory_ratio: 0.7642436149312377
+        num_neurons: 509
+        sim_time: 0.5
+network_type:
+    value: ConnSNN
+project_name:
+    value: E-SNN-mnist
+run_name:
+    value: mix=1.0_kh=0.08_kin=0.14
+save_every:
+    value: 50
+save_model_path:
+    value: models/E-SNN-mnist/mix=1.0_kh=0.08_kin=0.14/
+seed:
+    value: 0
+task:
+    value: mnist
+total_generations:
+    value: 500
+use_bio_probability:
+    value: true

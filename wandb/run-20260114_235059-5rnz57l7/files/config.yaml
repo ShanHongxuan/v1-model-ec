@@ -1,0 +1,56 @@
+_wandb:
+    value:
+        cli_version: 0.21.3
+        m: []
+        python_version: 3.9.23
+        t:
+            "1":
+                - 2
+                - 3
+                - 12
+                - 35
+                - 45
+            "3":
+                - 13
+                - 16
+            "4": 3.9.23
+            "5": 0.21.3
+            "10":
+                - 20
+            "12": 0.21.3
+            "13": linux-x86_64
+bio_prob_mix_factor:
+    value: 0
+episode_conf:
+    value:
+        action_repeat: 1
+        max_episode_length: 50
+es_conf:
+    value:
+        lr: 0.1
+log_group:
+    value: BioMix_vs_K_Sweep_20260114_2045
+network_conf:
+    value:
+        K_h: 0.04
+        K_in: 0.1
+        excitatory_ratio: 0.7642436149312377
+        num_neurons: 509
+network_type:
+    value: ConnSNN
+project_name:
+    value: E-SNN-mnist
+run_name:
+    value: mix=0_kh=0.04_kin=0.1
+save_every:
+    value: 50
+save_model_path:
+    value: models/E-SNN-mnist/mix=0_kh=0.04_kin=0.1/
+seed:
+    value: 0
+task:
+    value: mnist
+total_generations:
+    value: 1000
+use_bio_probability:
+    value: true

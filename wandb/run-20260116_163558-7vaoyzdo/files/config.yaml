@@ -1,0 +1,104 @@
+_wandb:
+    value:
+        cli_version: 0.21.3
+        e:
+            ltwvzwbjtw2q1km43ve7lg4jv2m32eg5:
+                args:
+                    - task=mnist
+                    - total_generations=1000
+                    - use_bio_probability=true
+                    - bio_prob_mix_factor=0.5
+                    - es_conf.lr=0.1
+                    - network_conf.K_in=0.06
+                    - network_conf.K_h=0.014
+                    - project_name=E-SNN-mnist
+                    - log_group=BioMix_vs_K_Sweep_20260116_1304
+                    - run_name=mix=0.5_kh=0.014_kin=0.06
+                codePath: ec.py
+                codePathLocal: ec.py
+                cpu_count: 5
+                cpu_count_logical: 10
+                cudaVersion: "12.7"
+                disk:
+                    /:
+                        total: "1081101176832"
+                        used: "161658855424"
+                email: 3102259390@qq.com
+                executable: /home/mzsk/miniconda3/envs/ec_py309/bin/python
+                gpu: NVIDIA GeForce RTX 4060 Laptop GPU
+                gpu_count: 1
+                gpu_nvidia:
+                    - architecture: Ada
+                      memoryTotal: "8585740288"
+                      name: NVIDIA GeForce RTX 4060 Laptop GPU
+                      uuid: GPU-95140831-d184-a55e-29ee-17d461e54cbc
+                host: r
+                memory:
+                    total: "12542767104"
+                os: Linux-6.6.87.2-microsoft-standard-WSL2-x86_64-with-glibc2.39
+                program: /home/mzsk/code/EvolvingConnectivity-master/ec.py
+                python: CPython 3.9.23
+                root: /home/mzsk/code/EvolvingConnectivity-master
+                startedAt: "2026-01-16T08:35:58.385972Z"
+                writerId: ltwvzwbjtw2q1km43ve7lg4jv2m32eg5
+        m: []
+        python_version: 3.9.23
+        t:
+            "1":
+                - 2
+                - 3
+                - 12
+                - 35
+                - 45
+            "2":
+                - 2
+                - 3
+                - 12
+                - 35
+                - 45
+            "3":
+                - 3
+                - 13
+                - 16
+                - 61
+            "4": 3.9.23
+            "5": 0.21.3
+            "10":
+                - 20
+            "12": 0.21.3
+            "13": linux-x86_64
+bio_prob_mix_factor:
+    value: 0.5
+episode_conf:
+    value:
+        action_repeat: 1
+        max_episode_length: 50
+es_conf:
+    value:
+        lr: 0.1
+log_group:
+    value: BioMix_vs_K_Sweep_20260116_1304
+network_conf:
+    value:
+        K_h: 0.014
+        K_in: 0.06
+        excitatory_ratio: 0.7642436149312377
+        num_neurons: 509
+network_type:
+    value: ConnSNN
+project_name:
+    value: E-SNN-mnist
+run_name:
+    value: mix=0.5_kh=0.014_kin=0.06
+save_every:
+    value: 50
+save_model_path:
+    value: models/E-SNN-mnist/mix=0.5_kh=0.014_kin=0.06/
+seed:
+    value: 0
+task:
+    value: mnist
+total_generations:
+    value: 1000
+use_bio_probability:
+    value: true

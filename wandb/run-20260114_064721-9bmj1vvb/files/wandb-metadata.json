@@ -1,0 +1,46 @@
+{
+  "os": "Linux-6.6.87.2-microsoft-standard-WSL2-x86_64-with-glibc2.39",
+  "python": "CPython 3.9.23",
+  "startedAt": "2026-01-13T22:47:21.817713Z",
+  "args": [
+    "task=mnist",
+    "total_generations=1000",
+    "use_bio_probability=true",
+    "bio_prob_mix_factor=0.5",
+    "es_conf.lr=0.15",
+    "network_conf.K_in=1.0",
+    "project_name=E-SNN-mnist",
+    "log_group=BioVsRandom_Sweep_20260113_1704",
+    "run_name=bio_p=true_mix=0.5_lr=0.15_kin=1.0"
+  ],
+  "program": "/home/mzsk/code/EvolvingConnectivity-master/ec.py",
+  "codePath": "ec.py",
+  "codePathLocal": "ec.py",
+  "email": "3102259390@qq.com",
+  "root": "/home/mzsk/code/EvolvingConnectivity-master",
+  "host": "r",
+  "executable": "/home/mzsk/miniconda3/envs/ec_py309/bin/python",
+  "cpu_count": 5,
+  "cpu_count_logical": 10,
+  "gpu": "NVIDIA GeForce RTX 4060 Laptop GPU",
+  "gpu_count": 1,
+  "disk": {
+    "/": {
+      "total": "1081101176832",
+      "used": "157818122240"
+    }
+  },
+  "memory": {
+    "total": "12542763008"
+  },
+  "gpu_nvidia": [
+    {
+      "name": "NVIDIA GeForce RTX 4060 Laptop GPU",
+      "memoryTotal": "8585740288",
+      "architecture": "Ada",
+      "uuid": "GPU-95140831-d184-a55e-29ee-17d461e54cbc"
+    }
+  ],
+  "cudaVersion": "12.7",
+  "writerId": "zv0ercak7xltcrumz6x1yz5sqnlw69u0"
+}
